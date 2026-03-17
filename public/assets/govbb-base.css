@@ -1,0 +1,99 @@
+/**
+ * GovTech Barbados – Base Styles & Design Tokens
+ *
+ * Link in <head>:
+ *   <link rel="stylesheet" href="/assets/govbb-base.css">
+ */
+
+/* ── Design tokens ────────────────────────────────── */
+:root {
+  /* Colours */
+  --color-yellow-00: #e8a833;
+  --color-yellow-100: #ffc726;
+  --color-yellow-40: #ffe9a8;
+  --color-yellow-10: #fff9e9;
+  --color-blue-00: #00164a;
+  --color-blue-100: #00267f;
+  --color-blue-40: #99a8cc;
+  --color-blue-10: #e5e9f2;
+  --color-black-00: #000000;
+  --color-mid-grey-00: #595959;
+  --color-grey-00: #e0e4e9;
+  --color-white-00: #ffffff;
+  --color-green-00: #00654a;
+  --color-green-100: #1fbf84;
+  --color-green-40: #a5e5ce;
+  --color-green-10: #e9f9f3;
+  --color-red-00: #a42c2c;
+  --color-red-100: #ff6b6b;
+  --color-red-40: #ffc4c4;
+  --color-red-10: #fff0f0;
+  --color-teal-00: #0e5f64;
+  --color-teal-100: #30c0c8;
+  --color-teal-40: #ace6e9;
+  --color-teal-10: #eaf9f9;
+  --color-purple-00: #4a235a;
+  --color-purple-100: #a962c7;
+  --color-pink-00: #ad1157;
+  --color-pink-100: #ff94d9;
+
+  /* Typography */
+  --font-size-display: 5rem;
+  --font-size-h1: 3.5rem;
+  --font-size-h2: 2.5rem;
+  --font-size-h3: 1.5rem;
+  --font-size-h4: 1.25rem;
+  --font-size-body-lg: 2rem;
+  --font-size-body: 1.25rem;
+  --font-size-caption: 1rem;
+
+  /* Spacing */
+  --spacing-xs: 0.5rem;
+  --spacing-s: 1rem;
+  --spacing-xm: 1.5rem;
+  --spacing-m: 2rem;
+  --spacing-l: 4rem;
+  --spacing-xl: 8rem;
+
+  /* Border radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+
+  /* Shadows */
+  --shadow-form-hover: inset 4px 4px 0px 0px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Base styles ──────────────────────────────────── */
+body {
+  font-family: Figtree, -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  font-weight: 400;
+  font-size: 1.25rem;
+  line-height: 1.5;
+  display: grid;
+  min-height: 100vh;
+  grid-template-rows: auto auto auto 1fr auto;
+  background: var(--color-white-00);
+  color: var(--color-black-00);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
