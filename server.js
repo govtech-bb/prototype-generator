@@ -9,7 +9,6 @@ const { generateReference } = require('./lib/reference');
 const { sendConfirmation, sendNotification } = require('./lib/email');
 const { generatePrototype } = require('./lib/generate');
 const { chat } = require('./lib/chat');
-const { lookupCitizen, lookupVehicle, lookupBusiness } = require('./lib/mock-apis');
 const cms = require('./lib/cases');
 const whatsapp = require('./lib/whatsapp');
 const s3 = require('./lib/s3');
@@ -202,29 +201,6 @@ app.post('/api/submit', async (req, res) => {
   });
 });
 
-// ── POST /api/trident-id ────────────────────────────────────
-app.post('/api/trident-id', (req, res) => {
-  const { nationalId } = req.body;
-  const result = lookupCitizen(nationalId);
-  // Simulate network latency (500-1000ms)
-  setTimeout(() => res.json(result), 500 + Math.random() * 500);
-});
-
-// ── POST /api/vehicle-lookup ────────────────────────────────
-app.post('/api/vehicle-lookup', (req, res) => {
-  const { plate } = req.body;
-  const result = lookupVehicle(plate);
-  // Simulate network latency (500-1000ms)
-  setTimeout(() => res.json(result), 500 + Math.random() * 500);
-});
-
-// ── POST /api/business-lookup ──────────────────────────────
-app.post('/api/business-lookup', (req, res) => {
-  const { registrationNumber } = req.body;
-  const result = lookupBusiness(registrationNumber);
-  // Simulate network latency (500-1000ms)
-  setTimeout(() => res.json(result), 500 + Math.random() * 500);
-});
 
 // ── S3 proxy: serve assets ──────────────────────────────────
 app.get('/assets/:filename', async (req, res) => {

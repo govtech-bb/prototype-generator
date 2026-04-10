@@ -393,9 +393,12 @@ Map specification sections to question pages as follows:
 
 | Specification block | Pages to create |
 |---|---|
-| **Name Block, Personal Details Block, Address Block, Contact Block** | **One page: Trident ID lookup.** Use `GovBB.tridentIdLookup('national-id')` to ask for the citizen's National Registration Number. The lookup retrieves their name, date of birth, gender, email, phone, address, and national insurance number from the Trident ID service and asks the user to confirm. Do **not** create separate pages for name, DOB, gender, address, email, phone, etc. — all of these are populated automatically from the lookup. Only create additional pages for fields that are NOT returned by the lookup (e.g. Marital Status, Disability Status, Emergency Contact, Mailing Address if different from residential). |
-| **Vehicle-related fields** | **One page: Vehicle lookup.** Use `GovBB.vehicleLookup('vehicle-reg')` to ask for the licence plate number. The lookup retrieves make, model, year, colour, engine number, chassis number, and registered owner. Do **not** create separate fields for these — they are populated automatically. Only create additional pages for fields not returned by the lookup (e.g. new colour, reason for change). |
-| **Business/Company fields** | **One page: Business lookup.** Use `GovBB.businessLookup('business-reg')` to ask for the Company Registration Number. The lookup retrieves entity name, status, type, date of incorporation, registered address, TIN, NIS number, and directors from CAIPO. Do **not** create separate fields for these — they are populated automatically. Only create additional pages for fields not returned by the lookup. |
+| **Name Block** | One page asking for the user's full name. Use `GovBB.textField` for first name, middle name (optional), and last name. Field IDs: `first-name`, `middle-name`, `last-name`. |
+| **Personal Details Block** | Separate pages for each detail following one-thing-per-page. Typical pages: (1) Date of birth with `GovBB.dateField('dob', ...)`; (2) Gender with `GovBB.radioGroup`; (3) National Registration Number with `GovBB.textField` (hint: "You can find this on your national ID card. For example, 870315-1234"); (4) National Insurance Number if needed. |
+| **Contact Block** | One page for contact details: email with `GovBB.emailField('contact-email', ...)` and mobile/phone with `GovBB.telField('mobile', ...)`. |
+| **Address Block** | One page for address: street address with `GovBB.textField('street-address', ...)`, parish with `GovBB.selectField('parish', ..., GovBB.PARISHES)`, and postal code with `GovBB.textField('postal-code', ...)`. |
+| **Vehicle-related fields** | Separate pages for vehicle details: (1) Licence plate with `GovBB.textField('vehicle-plate', ...)`; (2) Vehicle make, model, year, colour; (3) Engine/chassis numbers if needed. Field IDs: `vehicle-plate`, `vehicle-make`, `vehicle-model`, `vehicle-year`, `vehicle-colour`, `vehicle-engine`, `vehicle-chassis`, `vehicle-owner`. |
+| **Business/Company fields** | Separate pages for business details: (1) Company Registration Number; (2) Business name, type, and status; (3) Business address; (4) TIN/NIS. Field IDs: `business-reg`, `business-name`, `business-status`, `business-type`, `business-address`, `business-parish`, `business-postal-code`, `business-tin`, `business-nis`, `business-directors`. |
 | **Education Block** | One page per institution entry (repeatable). Include "Add another" pattern. |
 | **Custom Sections** | Follow the same one-thing-per-page principle. |
 | **Declaration Block** | One page with the declaration statement as static text, consent checkboxes, and (optionally) a signature capture placeholder. |
@@ -414,7 +417,7 @@ For each question page:
 - H1: **"Check your answers before sending your application"**
 - Group answers by section using `<h2>` subheadings (e.g. "Personal details", "Address", "Contact details")
 - Use a **summary list** layout to display each question and its answer in key–value rows. Each row has three columns: the question label, the answer value, and a **"Change"** link. Include visually hidden text for accessibility (e.g. `<span class="sr-only"> name</span>`)
-- For fields populated by the Trident ID or Vehicle lookup, the "Change" link should navigate back to the lookup page (e.g. `'trident-id'` or `'vehicle-reg'`). Display the lookup-populated values using the standard field IDs (e.g. `GovBB.D['first-name']`, `GovBB.D['vehicle-make']`).
+- Each "Change" link should navigate back to the question page where that field was entered. Display values using the standard field IDs (e.g. `GovBB.D['first-name']`, `GovBB.D['vehicle-make']`).
 - Each "Change" link navigates back to the relevant question page
 - Show a primary button at the bottom: **"Submit application"** (or equivalent from the spec)
 - Only display sections the user has completed; hide sections skipped via conditional logic
@@ -588,8 +591,8 @@ Every prototype must follow this exact structure:
 const FORM_NAME = 'My Form Name';
 
 // If the service has a fee, include payment pages before confirmation:
-const FLOW = ['start', 'trident-id', 'additional-question', 'declaration', 'check', 'payment', 'payment-details', 'payment-confirm', 'confirmation'];
-// If no fee: ['start', 'trident-id', 'additional-question', 'declaration', 'check', 'confirmation'];
+const FLOW = ['start', 'name', 'dob', 'contact', 'address', 'additional-question', 'declaration', 'check', 'payment', 'payment-details', 'payment-confirm', 'confirmation'];
+// If no fee: ['start', 'name', 'dob', 'contact', 'address', 'additional-question', 'declaration', 'check', 'confirmation'];
 
 const PAGES = {
   'start': () => `
@@ -601,16 +604,55 @@ const PAGES = {
       ${GovBB.whatsappBtn()}
     </div>`,
 
-  // Trident ID lookup replaces separate name, DOB, address, contact pages
-  'trident-id': () => `
+  'name': () => `
     <form novalidate>
       ${GovBB.backLink()}
       ${GovBB.caption()}
-      <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">Verify your identity</h1>
-      ${GovBB.tridentIdLookup('national-id')}
+      <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">What is your name?</h1>
+      <div class="space-y-8">
+        ${GovBB.textField('first-name', 'First name')}
+        ${GovBB.textField('middle-name', 'Middle name (optional)')}
+        ${GovBB.textField('last-name', 'Last name')}
+        ${GovBB.continueBtn()}
+      </div>
     </form>`,
 
-  // Only ask questions NOT covered by the lookup
+  'dob': () => `
+    <form novalidate>
+      ${GovBB.backLink()}
+      ${GovBB.caption()}
+      <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">What is your date of birth?</h1>
+      <div class="space-y-8">
+        ${GovBB.dateField('dob', 'Date of birth', 'For example, 27 03 2007')}
+        ${GovBB.continueBtn()}
+      </div>
+    </form>`,
+
+  'contact': () => `
+    <form novalidate>
+      ${GovBB.backLink()}
+      ${GovBB.caption()}
+      <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">How can we contact you?</h1>
+      <div class="space-y-8">
+        ${GovBB.emailField('contact-email', 'Email address')}
+        ${GovBB.telField('mobile', 'Mobile phone number', { hint: 'For example, 246-555-0147' })}
+        ${GovBB.continueBtn()}
+      </div>
+    </form>`,
+
+  'address': () => `
+    <form novalidate>
+      ${GovBB.backLink()}
+      ${GovBB.caption()}
+      <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">What is your address?</h1>
+      <div class="space-y-8">
+        ${GovBB.textField('street-address', 'Street address')}
+        ${GovBB.selectField('parish', 'Parish', GovBB.PARISHES)}
+        ${GovBB.textField('postal-code', 'Postal code', { hint: 'For example, BB15028', placeholder: 'BB11000', width: 'w-40' })}
+        ${GovBB.continueBtn()}
+      </div>
+    </form>`,
+
   'additional-question': () => `
     <form novalidate>
       ${GovBB.backLink()}
@@ -630,11 +672,11 @@ const PAGES = {
     <div class="space-y-8">
       <h2 class="text-[1.5rem] font-bold">Personal details</h2>
       <dl class="divide-y divide-bb-grey-00 border-t border-bb-grey-00">
-        ${GovBB.summaryRow('Name', [GovBB.D['first-name'], GovBB.D['middle-name'], GovBB.D['last-name']].filter(Boolean).join(' '), 'trident-id')}
-        ${GovBB.summaryRow('Date of birth', GovBB.D['dob-day'] + '/' + GovBB.D['dob-month'] + '/' + GovBB.D['dob-year'], 'trident-id')}
-        ${GovBB.summaryRow('Email', GovBB.D['contact-email'], 'trident-id')}
-        ${GovBB.summaryRow('Mobile', GovBB.D['mobile'], 'trident-id')}
-        ${GovBB.summaryRow('Address', GovBB.D['street-address'] + ', ' + GovBB.D['parish'] + ' ' + GovBB.D['postal-code'], 'trident-id')}
+        ${GovBB.summaryRow('Name', [GovBB.D['first-name'], GovBB.D['middle-name'], GovBB.D['last-name']].filter(Boolean).join(' '), 'name')}
+        ${GovBB.summaryRow('Date of birth', GovBB.D['dob-day'] + '/' + GovBB.D['dob-month'] + '/' + GovBB.D['dob-year'], 'dob')}
+        ${GovBB.summaryRow('Email', GovBB.D['contact-email'], 'contact')}
+        ${GovBB.summaryRow('Mobile', GovBB.D['mobile'], 'contact')}
+        ${GovBB.summaryRow('Address', GovBB.D['street-address'] + ', ' + GovBB.D['parish'] + ' ' + GovBB.D['postal-code'], 'address')}
       </dl>
       ${GovBB.continueBtn('Continue to payment')}  // or 'Submit application' if no payment
     </div>`,
@@ -659,12 +701,22 @@ function validate(pageId) {
   const D = GovBB.D;
   const errors = [];
 
-  // Lookup pages: check that the lookup was confirmed
-  if (pageId === 'trident-id' && !D['_tridentConfirmed']) {
-    errors.push({ id: 'national-id', msg: 'Look up and confirm your identity to continue' });
+  if (pageId === 'name') {
+    if (!D['first-name']) errors.push({ id: 'first-name', msg: 'Enter your first name' });
+    if (!D['last-name']) errors.push({ id: 'last-name', msg: 'Enter your last name' });
   }
-  if (pageId === 'vehicle-reg' && !D['_vehicleConfirmed']) {
-    errors.push({ id: 'vehicle-reg', msg: 'Look up and confirm your vehicle to continue' });
+  if (pageId === 'dob') {
+    if (!D['dob-day'] || !D['dob-month'] || !D['dob-year']) {
+      errors.push({ id: 'dob', msg: 'Enter your date of birth' });
+    }
+  }
+  if (pageId === 'contact') {
+    if (!D['contact-email']) errors.push({ id: 'contact-email', msg: 'Enter your email address' });
+    if (!D['mobile']) errors.push({ id: 'mobile', msg: 'Enter your mobile phone number' });
+  }
+  if (pageId === 'address') {
+    if (!D['street-address']) errors.push({ id: 'street-address', msg: 'Enter your street address' });
+    if (!D['parish']) errors.push({ id: 'parish', msg: 'Choose your parish' });
   }
 
   // Payment validation (if the service has a fee)
@@ -727,12 +779,6 @@ The framework is loaded via `<script src="/assets/govbb-framework.js"></script>`
   - options: array of strings or `{ value, label }` objects
   - opts: `{ hint }`
 - `GovBB.checkboxItem(name, label)` — single checkbox
-- `GovBB.tridentIdLookup(fieldId, opts?)` — Trident ID citizen lookup field with "Look up" button. Shows retrieved citizen details (name, DOB, email, phone, address) and confirm/retry buttons. On confirm, populates standard field IDs (`first-name`, `last-name`, `dob-day`, `contact-email`, `mobile`, `street-address`, `parish`, etc.) and advances to the next page.
-  - opts: `{ label, hint }`
-- `GovBB.vehicleLookup(fieldId, opts?)` — Licensing Authority vehicle lookup field with "Look up" button. Shows retrieved vehicle details (make, model, year, colour, engine/chassis numbers, owner) and confirm/retry buttons. On confirm, populates standard field IDs (`vehicle-plate`, `vehicle-make`, `vehicle-model`, `vehicle-colour`, etc.) and advances to the next page.
-  - opts: `{ label, hint }`
-- `GovBB.businessLookup(fieldId, opts?)` — CAIPO business/company lookup field with "Look up" button. Shows retrieved business details (entity name, status, type, date of incorporation, registered address, TIN, NIS, directors) and confirm/retry buttons. On confirm, populates standard field IDs (`business-reg`, `business-name`, `business-status`, `business-type`, `business-tin`, `business-nis`, etc.) and advances to the next page.
-  - opts: `{ label, hint }`
 - `GovBB.summaryRow(label, value, changeTo)` — Check Your Answers row with Change link
 
 **Payment (GOV.UK Pay-style + EZPay):**
@@ -814,103 +860,6 @@ When creating a new prototype, you must also:
 2. Ensure the form collects an email address (field ID `contact-email` or `email`) if applicant confirmation is needed.
 
 ---
-
-## Mock government API integrations
-
-Three mock APIs simulate real government data services for prototype demonstrations. All endpoints include simulated network latency (500–1000ms) and return `{ success, data }` or `{ success, error }`.
-
-### Trident ID — citizen identity lookup
-
-**Endpoint:** `POST /api/trident-id`
-**Request body:** `{ "nationalId": "870315-1234" }`
-**Response:** citizen details (name, DOB, gender, email, phone, address, national insurance number)
-
-Use `GovBB.tridentIdLookup('national-id')` on a question page. The helper renders the input, lookup button, loading spinner, results panel, and confirm/retry buttons. On confirmation it stores all retrieved fields into `GovBB.D` using standard field IDs and advances to the next page.
-
-**Test National Registration Numbers:**
-| NRN | Name |
-|---|---|
-| `870315-1234` | Keisha Marie Brathwaite |
-| `910822-5678` | Dwayne Alleyne |
-| `760510-9012` | Sandra Ann Cumberbatch |
-| `000101-0001` | Abisola Fatokun |
-
-### Licensing Authority — vehicle lookup
-
-**Endpoint:** `POST /api/vehicle-lookup`
-**Request body:** `{ "plate": "B 1234" }`
-**Response:** vehicle details (plate, make, model, year, colour, engine number, chassis number, registered owner)
-
-Use `GovBB.vehicleLookup('vehicle-reg')` on a question page. Same UX pattern as the Trident ID lookup.
-
-**Test licence plates:**
-| Plate | Vehicle | Owner |
-|---|---|---|
-| `B 1234` | 2019 Toyota Corolla (Silver) | Keisha Marie Brathwaite |
-| `B 5678` | 2021 Hyundai Tucson (Blue) | Dwayne Alleyne |
-| `B 9012` | 2017 Nissan X-Trail (White) | Sandra Ann Cumberbatch |
-| `B 0001` | 2022 Honda Civic (Black) | Abisola Fatokun |
-
-### CAIPO — business / company lookup
-
-**Endpoint:** `POST /api/business-lookup`
-**Request body:** `{ "registrationNumber": "BB-2019-04521" }`
-**Response:** business details (entity name, status, company type, date of incorporation, registered address, TIN, NIS number, business name registration, directors)
-
-Use `GovBB.businessLookup('business-reg')` on a question page. Same UX pattern as the other lookups. On confirmation it stores all retrieved fields into `GovBB.D` using standard field IDs (`business-reg`, `business-name`, `business-status`, `business-type`, `business-inc-day`, `business-inc-month`, `business-inc-year`, `business-address`, `business-parish`, `business-postal-code`, `business-tin`, `business-nis`, `business-name-reg`, `business-directors`) and advances to the next page.
-
-**Test Company Registration Numbers:**
-| Registration Number | Business Name | Status |
-|---|---|---|
-| `BB-2019-04521` | Bajan Solar Solutions Ltd. | Active |
-| `BB-2015-01287` | Island Fresh Produce Inc. | Active |
-| `BB-2021-07893` | Cumberbatch & Associates | Active |
-| `BB-2022-00100` | GovTech Barbados Ltd. | Active |
-| `BB-2010-05500` | Caribbean Blue Charters Ltd. | Dissolved |
-
-### Using lookups in prototypes
-
-When a form specification mentions looking up citizen identity, vehicle details, or business details, use these lookup pages instead of manual input fields:
-
-```javascript
-'trident-id': () => `
-  <form novalidate>
-    ${GovBB.backLink()}
-    ${GovBB.caption()}
-    <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">Verify your identity</h1>
-    ${GovBB.tridentIdLookup('national-id')}
-  </form>`,
-
-'vehicle-reg': () => `
-  <form novalidate>
-    ${GovBB.backLink()}
-    ${GovBB.caption()}
-    <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">Find your vehicle</h1>
-    ${GovBB.vehicleLookup('vehicle-reg')}
-  </form>`,
-
-'business-reg': () => `
-  <form novalidate>
-    ${GovBB.backLink()}
-    ${GovBB.caption()}
-    <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">Find your business</h1>
-    ${GovBB.businessLookup('business-reg')}
-  </form>`,
-```
-
-Validation for lookup pages should check that the lookup was confirmed:
-
-```javascript
-if (pageId === 'trident-id' && !D['_tridentConfirmed']) {
-  errors.push({ id: 'national-id', msg: 'Look up and confirm your identity to continue' });
-}
-if (pageId === 'vehicle-reg' && !D['_vehicleConfirmed']) {
-  errors.push({ id: 'vehicle-reg', msg: 'Look up and confirm your vehicle to continue' });
-}
-if (pageId === 'business-reg' && !D['_businessConfirmed']) {
-  errors.push({ id: 'business-reg', msg: 'Look up and confirm your business to continue' });
-}
-```
 
 ---
 
