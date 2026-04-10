@@ -382,7 +382,7 @@ Every prototype must contain these pages, in order:
 - H1: the form name from the specification
 - Subtitle with last-updated date
 - A short introductory paragraph explaining what the form does and who is eligible
-- A "How to apply" section with a green primary button linking to the form: **"Complete the online form"** (styled as a teal `<a>` tag with button classes)
+- A "How to apply" section with a green primary button linking to the form: **"Complete the online form"** (styled as a teal `<a>` tag with button classes), followed by a **"Complete via chat"** link (`GovBB.chatBtn()`) and a **"Complete via WhatsApp"** link (`GovBB.whatsappBtn()`) offering alternative channels
 - A "What you will need to share" section listing what the user should have ready
 - A Back link at the top
 - The standard page chrome: top bar, header, alpha banner, footer
@@ -393,10 +393,9 @@ Map specification sections to question pages as follows:
 
 | Specification block | Pages to create |
 |---|---|
-| **Name Block** | One page: First Name, Middle Name(s), Last Name |
-| **Personal Details Block** | Split into sensible single-question pages: Date of Birth → Gender → National Registration No. → National Insurance No. → Marital Status → Disability Status (with conditional textarea) |
-| **Address Block** | One page: Street Address, Parish (dropdown), Postal Code. Include the "Mailing address same as present address" checkbox and conditional reveal. |
-| **Contact Block** | One page: Landline, Mobile, Email. A separate page for Emergency Contact fields if present. |
+| **Name Block, Personal Details Block, Address Block, Contact Block** | **One page: Trident ID lookup.** Use `GovBB.tridentIdLookup('national-id')` to ask for the citizen's National Registration Number. The lookup retrieves their name, date of birth, gender, email, phone, address, and national insurance number from the Trident ID service and asks the user to confirm. Do **not** create separate pages for name, DOB, gender, address, email, phone, etc. — all of these are populated automatically from the lookup. Only create additional pages for fields that are NOT returned by the lookup (e.g. Marital Status, Disability Status, Emergency Contact, Mailing Address if different from residential). |
+| **Vehicle-related fields** | **One page: Vehicle lookup.** Use `GovBB.vehicleLookup('vehicle-reg')` to ask for the licence plate number. The lookup retrieves make, model, year, colour, engine number, chassis number, and registered owner. Do **not** create separate fields for these — they are populated automatically. Only create additional pages for fields not returned by the lookup (e.g. new colour, reason for change). |
+| **Business/Company fields** | **One page: Business lookup.** Use `GovBB.businessLookup('business-reg')` to ask for the Company Registration Number. The lookup retrieves entity name, status, type, date of incorporation, registered address, TIN, NIS number, and directors from CAIPO. Do **not** create separate fields for these — they are populated automatically. Only create additional pages for fields not returned by the lookup. |
 | **Education Block** | One page per institution entry (repeatable). Include "Add another" pattern. |
 | **Custom Sections** | Follow the same one-thing-per-page principle. |
 | **Declaration Block** | One page with the declaration statement as static text, consent checkboxes, and (optionally) a signature capture placeholder. |
@@ -415,9 +414,48 @@ For each question page:
 - H1: **"Check your answers before sending your application"**
 - Group answers by section using `<h2>` subheadings (e.g. "Personal details", "Address", "Contact details")
 - Use a **summary list** layout to display each question and its answer in key–value rows. Each row has three columns: the question label, the answer value, and a **"Change"** link. Include visually hidden text for accessibility (e.g. `<span class="sr-only"> name</span>`)
+- For fields populated by the Trident ID or Vehicle lookup, the "Change" link should navigate back to the lookup page (e.g. `'trident-id'` or `'vehicle-reg'`). Display the lookup-populated values using the standard field IDs (e.g. `GovBB.D['first-name']`, `GovBB.D['vehicle-make']`).
 - Each "Change" link navigates back to the relevant question page
 - Show a primary button at the bottom: **"Submit application"** (or equivalent from the spec)
 - Only display sections the user has completed; hide sections skipped via conditional logic
+
+### 3b. Payment pages (for services requiring payment)
+
+If the form specification includes a fee or payment amount, insert three payment pages between "Check Your Answers" and "Confirmation". The framework provides built-in helpers for these:
+
+**Flow order:** `... → check → payment → payment-details → payment-confirm → confirmation`
+
+**Page definitions:**
+```javascript
+'payment': () => GovBB.paymentMethodPage({
+  amount: '55.00',
+  description: 'Beach Ice Cream Vendor License',
+  currency: 'BBD'
+}),
+'payment-details': () => GovBB.paymentDetailsPage({
+  amount: '55.00',
+  currency: 'BBD'
+}),
+'payment-confirm': () => GovBB.paymentConfirmPage({
+  amount: '55.00',
+  description: 'Beach Ice Cream Vendor License',
+  currency: 'BBD'
+}),
+```
+
+**Validation:** Add payment validation to the prototype's `validate()` function:
+```javascript
+if (['payment', 'payment-details', 'payment-confirm'].includes(pageId)) {
+  return GovBB.validatePayment(pageId);
+}
+```
+
+**How it works:**
+1. **Payment method page** — user chooses "Pay by debit or credit card" or "Pay with EZPay (Barbados bank account)". EZPay is a direct bank transfer option for citizens with a local Barbados bank account.
+2. **Payment details page** — if card: card number, expiry (MM/YY), CVC, name on card, optional billing address. If EZPay: bank name (dropdown of Barbados banks), account number, account holder name.
+3. **Payment confirmation page** — summary of amount, method, and last 4 digits / bank name. "Pay" button triggers a simulated processing animation (1.5–2.5 seconds), then auto-submits the application and advances to the confirmation page.
+
+**Important:** The "Submit application" button on the Check Your Answers page should say **"Continue to payment"** when payment is required, not "Submit application". The actual submission happens after payment processing.
 
 ### 4. Confirmation page
 
@@ -549,7 +587,9 @@ Every prototype must follow this exact structure:
 /* ───────── Form-specific configuration ───────── */
 const FORM_NAME = 'My Form Name';
 
-const FLOW = ['start', 'page-1', 'page-2', 'declaration', 'check', 'confirmation'];
+// If the service has a fee, include payment pages before confirmation:
+const FLOW = ['start', 'trident-id', 'additional-question', 'declaration', 'check', 'payment', 'payment-details', 'payment-confirm', 'confirmation'];
+// If no fee: ['start', 'trident-id', 'additional-question', 'declaration', 'check', 'confirmation'];
 
 const PAGES = {
   'start': () => `
@@ -557,9 +597,21 @@ const PAGES = {
       <h1 class="font-bold text-[3.5rem] leading-[1.15]">${FORM_NAME}</h1>
       <!-- ... start page content ... -->
       ${GovBB.startBtn()}
+      ${GovBB.chatBtn()}
+      ${GovBB.whatsappBtn()}
     </div>`,
 
-  'page-1': () => `
+  // Trident ID lookup replaces separate name, DOB, address, contact pages
+  'trident-id': () => `
+    <form novalidate>
+      ${GovBB.backLink()}
+      ${GovBB.caption()}
+      <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">Verify your identity</h1>
+      ${GovBB.tridentIdLookup('national-id')}
+    </form>`,
+
+  // Only ask questions NOT covered by the lookup
+  'additional-question': () => `
     <form novalidate>
       ${GovBB.backLink()}
       ${GovBB.caption()}
@@ -576,11 +628,21 @@ const PAGES = {
     ${GovBB.backLink()}
     <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">Check your answers</h1>
     <div class="space-y-8">
+      <h2 class="text-[1.5rem] font-bold">Personal details</h2>
       <dl class="divide-y divide-bb-grey-00 border-t border-bb-grey-00">
-        ${GovBB.summaryRow('Field label', GovBB.D['field-id'], 'page-1')}
+        ${GovBB.summaryRow('Name', [GovBB.D['first-name'], GovBB.D['middle-name'], GovBB.D['last-name']].filter(Boolean).join(' '), 'trident-id')}
+        ${GovBB.summaryRow('Date of birth', GovBB.D['dob-day'] + '/' + GovBB.D['dob-month'] + '/' + GovBB.D['dob-year'], 'trident-id')}
+        ${GovBB.summaryRow('Email', GovBB.D['contact-email'], 'trident-id')}
+        ${GovBB.summaryRow('Mobile', GovBB.D['mobile'], 'trident-id')}
+        ${GovBB.summaryRow('Address', GovBB.D['street-address'] + ', ' + GovBB.D['parish'] + ' ' + GovBB.D['postal-code'], 'trident-id')}
       </dl>
-      ${GovBB.continueBtn('Submit application')}
+      ${GovBB.continueBtn('Continue to payment')}  // or 'Submit application' if no payment
     </div>`,
+
+  // Payment pages (only include if the service has a fee)
+  'payment': () => GovBB.paymentMethodPage({ amount: '55.00', description: 'Beach Ice Cream Vendor License', currency: 'BBD' }),
+  'payment-details': () => GovBB.paymentDetailsPage({ amount: '55.00', currency: 'BBD' }),
+  'payment-confirm': () => GovBB.paymentConfirmPage({ amount: '55.00', description: 'Beach Ice Cream Vendor License', currency: 'BBD' }),
 
   'confirmation': () => `
     <div class="space-y-8">
@@ -596,7 +658,21 @@ const PAGES = {
 function validate(pageId) {
   const D = GovBB.D;
   const errors = [];
-  // ... validation logic per pageId ...
+
+  // Lookup pages: check that the lookup was confirmed
+  if (pageId === 'trident-id' && !D['_tridentConfirmed']) {
+    errors.push({ id: 'national-id', msg: 'Look up and confirm your identity to continue' });
+  }
+  if (pageId === 'vehicle-reg' && !D['_vehicleConfirmed']) {
+    errors.push({ id: 'vehicle-reg', msg: 'Look up and confirm your vehicle to continue' });
+  }
+
+  // Payment validation (if the service has a fee)
+  if (['payment', 'payment-details', 'payment-confirm'].includes(pageId)) {
+    return GovBB.validatePayment(pageId);
+  }
+
+  // ... additional validation logic per pageId ...
   return errors;
 }
 
@@ -633,6 +709,8 @@ The framework is loaded via `<script src="/assets/govbb-framework.js"></script>`
 - `GovBB.caption(text?)` — form section caption (defaults to formName)
 - `GovBB.continueBtn(label?)` — primary continue/submit button (default: "Continue")
 - `GovBB.startBtn(label?)` — start page link-button (default: "Complete the online form")
+- `GovBB.chatBtn(label?)` — link to the conversational chat UI for this form (default: "Complete via chat"). Automatically derives the form filename from the current URL.
+- `GovBB.whatsappBtn(label?)` — link to the WhatsApp simulator for this form (default: "Complete via WhatsApp"). Includes a WhatsApp icon. Automatically derives the form filename from the current URL.
 - `GovBB.textField(id, label, opts?)` — text input with label, hint, error placeholder
   - opts: `{ hint, width, inputmode, maxlength, placeholder }`
 - `GovBB.emailField(id, label, opts?)` — email input
@@ -649,7 +727,20 @@ The framework is loaded via `<script src="/assets/govbb-framework.js"></script>`
   - options: array of strings or `{ value, label }` objects
   - opts: `{ hint }`
 - `GovBB.checkboxItem(name, label)` — single checkbox
+- `GovBB.tridentIdLookup(fieldId, opts?)` — Trident ID citizen lookup field with "Look up" button. Shows retrieved citizen details (name, DOB, email, phone, address) and confirm/retry buttons. On confirm, populates standard field IDs (`first-name`, `last-name`, `dob-day`, `contact-email`, `mobile`, `street-address`, `parish`, etc.) and advances to the next page.
+  - opts: `{ label, hint }`
+- `GovBB.vehicleLookup(fieldId, opts?)` — Licensing Authority vehicle lookup field with "Look up" button. Shows retrieved vehicle details (make, model, year, colour, engine/chassis numbers, owner) and confirm/retry buttons. On confirm, populates standard field IDs (`vehicle-plate`, `vehicle-make`, `vehicle-model`, `vehicle-colour`, etc.) and advances to the next page.
+  - opts: `{ label, hint }`
+- `GovBB.businessLookup(fieldId, opts?)` — CAIPO business/company lookup field with "Look up" button. Shows retrieved business details (entity name, status, type, date of incorporation, registered address, TIN, NIS, directors) and confirm/retry buttons. On confirm, populates standard field IDs (`business-reg`, `business-name`, `business-status`, `business-type`, `business-tin`, `business-nis`, etc.) and advances to the next page.
+  - opts: `{ label, hint }`
 - `GovBB.summaryRow(label, value, changeTo)` — Check Your Answers row with Change link
+
+**Payment (GOV.UK Pay-style + EZPay):**
+- `GovBB.paymentMethodPage(opts)` — payment method selection page (card or EZPay). opts: `{ amount, description, currency }`
+- `GovBB.paymentDetailsPage(opts)` — card or EZPay details page (renders based on `D['payment-method']`). opts: `{ amount, currency }`
+- `GovBB.paymentConfirmPage(opts)` — confirm payment summary with "Pay" button and processing animation. opts: `{ amount, description, currency }`
+- `GovBB.validatePayment(pageId)` — validate payment pages ('payment', 'payment-details'). Returns `[{id, msg}]` array.
+- `GovBB.BB_BANKS` — array of Barbados banks for EZPay
 
 **Validation:**
 - `GovBB.clearErrors()` — clear all error states
@@ -724,6 +815,105 @@ When creating a new prototype, you must also:
 
 ---
 
+## Mock government API integrations
+
+Three mock APIs simulate real government data services for prototype demonstrations. All endpoints include simulated network latency (500–1000ms) and return `{ success, data }` or `{ success, error }`.
+
+### Trident ID — citizen identity lookup
+
+**Endpoint:** `POST /api/trident-id`
+**Request body:** `{ "nationalId": "870315-1234" }`
+**Response:** citizen details (name, DOB, gender, email, phone, address, national insurance number)
+
+Use `GovBB.tridentIdLookup('national-id')` on a question page. The helper renders the input, lookup button, loading spinner, results panel, and confirm/retry buttons. On confirmation it stores all retrieved fields into `GovBB.D` using standard field IDs and advances to the next page.
+
+**Test National Registration Numbers:**
+| NRN | Name |
+|---|---|
+| `870315-1234` | Keisha Marie Brathwaite |
+| `910822-5678` | Dwayne Alleyne |
+| `760510-9012` | Sandra Ann Cumberbatch |
+| `000101-0001` | Abisola Fatokun |
+
+### Licensing Authority — vehicle lookup
+
+**Endpoint:** `POST /api/vehicle-lookup`
+**Request body:** `{ "plate": "B 1234" }`
+**Response:** vehicle details (plate, make, model, year, colour, engine number, chassis number, registered owner)
+
+Use `GovBB.vehicleLookup('vehicle-reg')` on a question page. Same UX pattern as the Trident ID lookup.
+
+**Test licence plates:**
+| Plate | Vehicle | Owner |
+|---|---|---|
+| `B 1234` | 2019 Toyota Corolla (Silver) | Keisha Marie Brathwaite |
+| `B 5678` | 2021 Hyundai Tucson (Blue) | Dwayne Alleyne |
+| `B 9012` | 2017 Nissan X-Trail (White) | Sandra Ann Cumberbatch |
+| `B 0001` | 2022 Honda Civic (Black) | Abisola Fatokun |
+
+### CAIPO — business / company lookup
+
+**Endpoint:** `POST /api/business-lookup`
+**Request body:** `{ "registrationNumber": "BB-2019-04521" }`
+**Response:** business details (entity name, status, company type, date of incorporation, registered address, TIN, NIS number, business name registration, directors)
+
+Use `GovBB.businessLookup('business-reg')` on a question page. Same UX pattern as the other lookups. On confirmation it stores all retrieved fields into `GovBB.D` using standard field IDs (`business-reg`, `business-name`, `business-status`, `business-type`, `business-inc-day`, `business-inc-month`, `business-inc-year`, `business-address`, `business-parish`, `business-postal-code`, `business-tin`, `business-nis`, `business-name-reg`, `business-directors`) and advances to the next page.
+
+**Test Company Registration Numbers:**
+| Registration Number | Business Name | Status |
+|---|---|---|
+| `BB-2019-04521` | Bajan Solar Solutions Ltd. | Active |
+| `BB-2015-01287` | Island Fresh Produce Inc. | Active |
+| `BB-2021-07893` | Cumberbatch & Associates | Active |
+| `BB-2022-00100` | GovTech Barbados Ltd. | Active |
+| `BB-2010-05500` | Caribbean Blue Charters Ltd. | Dissolved |
+
+### Using lookups in prototypes
+
+When a form specification mentions looking up citizen identity, vehicle details, or business details, use these lookup pages instead of manual input fields:
+
+```javascript
+'trident-id': () => `
+  <form novalidate>
+    ${GovBB.backLink()}
+    ${GovBB.caption()}
+    <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">Verify your identity</h1>
+    ${GovBB.tridentIdLookup('national-id')}
+  </form>`,
+
+'vehicle-reg': () => `
+  <form novalidate>
+    ${GovBB.backLink()}
+    ${GovBB.caption()}
+    <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">Find your vehicle</h1>
+    ${GovBB.vehicleLookup('vehicle-reg')}
+  </form>`,
+
+'business-reg': () => `
+  <form novalidate>
+    ${GovBB.backLink()}
+    ${GovBB.caption()}
+    <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-8">Find your business</h1>
+    ${GovBB.businessLookup('business-reg')}
+  </form>`,
+```
+
+Validation for lookup pages should check that the lookup was confirmed:
+
+```javascript
+if (pageId === 'trident-id' && !D['_tridentConfirmed']) {
+  errors.push({ id: 'national-id', msg: 'Look up and confirm your identity to continue' });
+}
+if (pageId === 'vehicle-reg' && !D['_vehicleConfirmed']) {
+  errors.push({ id: 'vehicle-reg', msg: 'Look up and confirm your vehicle to continue' });
+}
+if (pageId === 'business-reg' && !D['_businessConfirmed']) {
+  errors.push({ id: 'business-reg', msg: 'Look up and confirm your business to continue' });
+}
+```
+
+---
+
 ## How to read the Form Specification input
 
 The user will provide a completed Form Specification document. Parse it as follows:
@@ -758,3 +948,5 @@ The user will provide a completed Form Specification document. Parse it as follo
 - [ ] Barbados-specific data formats (DD MM YYYY dates, parish list, phone format, postal codes)
 - [ ] Confirmation page with `window.__refNumber` fallback
 - [ ] Form name → prefix mapping added to `lib/reference.js`
+- [ ] Start page includes `${GovBB.chatBtn()}` and `${GovBB.whatsappBtn()}` for alternative channels
+- [ ] If the service requires payment: payment pages (`payment`, `payment-details`, `payment-confirm`) included in flow with `GovBB.paymentMethodPage()`, `GovBB.paymentDetailsPage()`, `GovBB.paymentConfirmPage()`, and `GovBB.validatePayment()` in the validate function. Check Your Answers button says "Continue to payment" instead of "Submit application".

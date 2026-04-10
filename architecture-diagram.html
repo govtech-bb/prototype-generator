@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GovTech Barbados – Platform Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #fafbfc;
+    color: #1a1a2e;
+    padding: 52px 56px 72px;
+    min-width: 1340px;
+  }
+
+  h1 { font-size: 30px; font-weight: 800; color: #0f172a; margin-bottom: 8px; letter-spacing: -0.3px; }
+  .subtitle { font-size: 14.5px; color: #64748b; line-height: 1.6; max-width: 720px; margin-bottom: 48px; }
+
+  /* ── Layout ── */
+  .diagram { position: relative; display: flex; flex-direction: column; gap: 28px; }
+  .row { display: flex; gap: 28px; align-items: stretch; }
+  .main-col { flex: 1; display: flex; flex-direction: column; gap: 28px; }
+  .side-col { width: 290px; flex-shrink: 0; display: flex; flex-direction: column; gap: 28px; }
+
+  /* ── Section blocks ── */
+  .section {
+    position: relative;
+    border: 1.5px dashed #d0d5dd;
+    border-radius: 16px;
+    padding: 40px 24px 24px;
+    background: #fff;
+  }
+  .section-label {
+    position: absolute;
+    top: -13px;
+    left: 20px;
+    padding: 4px 16px;
+    border-radius: 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #fff;
+    white-space: nowrap;
+  }
+
+  /* Section colours */
+  .sec-client .section-label      { background: #0e9f6e; }
+  .sec-client                     { border-color: #a7f3d0; }
+  .sec-assets .section-label      { background: #d97706; }
+  .sec-assets                     { border-color: #fde68a; }
+  .sec-server .section-label      { background: #2563eb; }
+  .sec-server                     { border-color: #bfdbfe; }
+  .sec-libs .section-label        { background: #7c3aed; }
+  .sec-libs                       { border-color: #ddd6fe; }
+  .sec-templates .section-label   { background: #db2777; }
+  .sec-templates                  { border-color: #fbcfe8; }
+  .sec-external .section-label    { background: #dc2626; }
+  .sec-external                   { border-color: #fecaca; }
+  .sec-config .section-label      { background: #475569; }
+  .sec-config                     { border-color: #cbd5e1; }
+  .sec-flows .section-label       { background: #0891b2; }
+  .sec-flows                      { border-color: #a5f3fc; }
+  .sec-mock .section-label        { background: #ea580c; }
+  .sec-mock                       { border-color: #fed7aa; }
+  .sec-deps .section-label        { background: #6d28d9; }
+  .sec-deps                       { border-color: #c4b5fd; }
+
+  /* ── Component cards ── */
+  .cards { display: flex; flex-wrap: wrap; gap: 12px; }
+  .card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 16px 12px 14px;
+    min-width: 126px;
+    max-width: 170px;
+    flex: 1;
+    transition: box-shadow 0.15s, border-color 0.15s;
+  }
+  .card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.06); border-color: #d1d5db; }
+  .card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+    font-size: 20px;
+  }
+  /* Icon background tints per section */
+  .sec-client .card-icon  { background: #ecfdf5; }
+  .sec-assets .card-icon  { background: #fffbeb; }
+  .sec-server .card-icon  { background: #eff6ff; }
+  .sec-libs .card-icon    { background: #f5f3ff; }
+  .sec-external .card-icon { background: #fef2f2; }
+  .sec-config .card-icon  { background: #f8fafc; }
+  .sec-mock .card-icon    { background: #fff7ed; }
+
+  .card-title { font-size: 12.5px; font-weight: 600; color: #111827; line-height: 1.3; margin-bottom: 4px; }
+  .card-desc  { font-size: 10.5px; color: #6b7280; line-height: 1.45; }
+
+  .card-wide { min-width: 170px; max-width: 220px; }
+
+  /* ── Annotation cards (side panel) ── */
+  .anno-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 0;
+  }
+  .anno-card + .anno-card { border-top: 1px solid #f1f5f9; }
+  .anno-icon {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+    background: #f0f9ff;
+  }
+  .anno-title { font-size: 12.5px; font-weight: 600; color: #111827; margin-bottom: 2px; }
+  .anno-desc  { font-size: 10.5px; color: #6b7280; line-height: 1.45; }
+
+  /* ── Flow arrows ── */
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 0;
+  }
+  .flow-arrow span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: #94a3b8;
+    font-weight: 500;
+  }
+  .arrow-down {
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #94a3b8;
+  }
+
+  /* ── Callout box ── */
+  .callout {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 11px;
+    color: #92400e;
+    line-height: 1.5;
+  }
+  .callout strong { font-weight: 600; }
+
+  /* ── Side panel ── */
+  .side-panel {
+    border: 1.5px dashed #d0d5dd;
+    border-radius: 16px;
+    padding: 40px 18px 20px;
+    position: relative;
+    background: #fff;
+  }
+
+  /* Users row */
+  .users-row {
+    display: flex;
+    justify-content: center;
+    gap: 56px;
+    padding: 8px 0 4px;
+  }
+  .user-fig {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .user-fig .icon {
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    background: #f1f5f9;
+    border: 2px solid #e2e8f0;
+  }
+  .user-fig .lbl { font-size: 11.5px; color: #64748b; font-weight: 600; }
+
+  /* Sub-section */
+  .sub-section {
+    border: 1.5px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 32px 16px 16px;
+    position: relative;
+    margin-top: 18px;
+  }
+  .sub-section .section-label {
+    font-size: 9.5px;
+    padding: 3px 12px;
+  }
+
+  /* Dep tags */
+  .dep-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dep-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    background: #f5f3ff;
+    border: 1px solid #e9e5ff;
+    color: #4c1d95;
+  }
+  .dep-tag strong { font-weight: 600; }
+  .dep-tag .ver { color: #8b5cf6; font-weight: 400; }
+
+  /* Colour swatches */
+  .swatch {
+    width: 20px; height: 20px;
+    border-radius: 4px;
+    display: inline-block;
+    border: 1px solid rgba(0,0,0,0.08);
+  }
+</style>
+</head>
+<body>
+
+<h1>GovTech Barbados Form Prototype Generator – Platform Architecture</h1>
+<p class="subtitle">
+  Six-layer stack powering form prototype generation, submission, and conversational form-filling for the Government of Barbados.
+  Lower layers provide shared infrastructure – upper layers deliver citizen and designer experiences.
+</p>
+
+<div class="diagram">
+
+  <!-- ════════ USERS ════════ -->
+  <div class="users-row">
+    <div class="user-fig"><span class="icon">🎨</span><span class="lbl">Designers</span></div>
+    <div class="user-fig"><span class="icon">🏛️</span><span class="lbl">MDA Admins</span></div>
+    <div class="user-fig"><span class="icon">👤</span><span class="lbl">Citizens</span></div>
+  </div>
+
+  <div class="flow-arrow"><span><span class="arrow-down"></span> interact via browser</span></div>
+
+  <div class="row">
+    <div class="main-col">
+
+      <!-- ════════ 1 · CLIENT LAYER ════════ -->
+      <div class="section sec-client">
+        <div class="section-label">Channels &amp; Front-end</div>
+        <div class="cards">
+          <div class="card">
+            <div class="card-icon">⚙️</div>
+            <div class="card-title">Generator UI</div>
+            <div class="card-desc">index.html – upload PDF spec or paste text to generate prototype</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">📋</div>
+            <div class="card-title">Prototype Listing</div>
+            <div class="card-desc">prototypes.html – browse all generated forms from S3</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">💬</div>
+            <div class="card-title">Chat Form UI</div>
+            <div class="card-desc">chat.html – conversational form-filling with Claude Sonnet</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">📝</div>
+            <div class="card-title">Generated Prototype</div>
+            <div class="card-desc">Single HTML per form – multi-page clickable gov form</div>
+          </div>
+        </div>
+        <div class="callout" style="margin-top:14px;">
+          <strong>Channel-agnostic:</strong> every prototype loads three shared assets – never inlined. Served from S3 via Express proxy with 1-hour cache.
+        </div>
+      </div>
+
+      <div class="flow-arrow"><span><span class="arrow-down"></span> loads shared assets</span></div>
+
+      <!-- ════════ 2 · SHARED FRONTEND ASSETS ════════ -->
+      <div class="section sec-assets">
+        <div class="section-label">Shared Frontend Assets – public/assets/</div>
+        <div class="cards">
+          <div class="card card-wide">
+            <div class="card-icon">🎨</div>
+            <div class="card-title">govbb-tailwind-config.js</div>
+            <div class="card-desc">Extends Tailwind with bb- prefixed colour tokens, spacing, typography, radii</div>
+          </div>
+          <div class="card card-wide">
+            <div class="card-icon">🖌️</div>
+            <div class="card-title">govbb-base.css</div>
+            <div class="card-desc">CSS custom properties, body grid layout, .container, .sr-only utility</div>
+          </div>
+          <div class="card card-wide">
+            <div class="card-icon">⚡</div>
+            <div class="card-title">govbb-framework.js</div>
+            <div class="card-desc">~952 lines – navigation, template helpers, 3 lookup UIs, validation, submission</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow"><span><span class="arrow-down"></span> API calls</span></div>
+
+      <!-- ════════ 3 · EXPRESS SERVER ════════ -->
+      <div class="section sec-server">
+        <div class="section-label">Express Server – server.js, port 3000</div>
+        <div class="cards">
+          <div class="card">
+            <div class="card-icon">🤖</div>
+            <div class="card-title">POST /api/generate</div>
+            <div class="card-desc">PDF upload → Claude Opus stream → auto-continue (up to 5 calls) → S3</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">📨</div>
+            <div class="card-title">POST /api/submit</div>
+            <div class="card-desc">Form data → ref number → confirmation + MDA notification emails</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">💬</div>
+            <div class="card-title">POST /api/chat</div>
+            <div class="card-desc">Multi-turn Claude Sonnet with 5 tools, in-memory sessions (1 hr TTL)</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">📄</div>
+            <div class="card-title">GET /api/prototypes</div>
+            <div class="card-desc">List all generated prototypes from S3 bucket</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">🔀</div>
+            <div class="card-title">S3 Asset Proxy</div>
+            <div class="card-desc">GET /assets/:file &amp; GET /:name.html – proxied from S3</div>
+          </div>
+        </div>
+
+        <!-- Mock APIs -->
+        <div class="sub-section sec-mock" style="background:#fff7ed;">
+          <div class="section-label">Mock Government APIs – Simulated Data Services</div>
+          <div class="cards">
+            <div class="card" style="max-width:200px;">
+              <div class="card-icon">🪪</div>
+              <div class="card-title">POST /api/trident-id</div>
+              <div class="card-desc">Citizen identity lookup by NRN – 4 test records, 500–1000 ms latency</div>
+            </div>
+            <div class="card" style="max-width:200px;">
+              <div class="card-icon">🚗</div>
+              <div class="card-title">POST /api/vehicle-lookup</div>
+              <div class="card-desc">Vehicle details by licence plate – 4 test records, 500–1000 ms latency</div>
+            </div>
+            <div class="card" style="max-width:200px;">
+              <div class="card-icon">🏢</div>
+              <div class="card-title">POST /api/business-lookup</div>
+              <div class="card-desc">CAIPO company registry – 5 test businesses (4 active, 1 dissolved)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow"><span><span class="arrow-down"></span> delegates to</span></div>
+
+      <!-- ════════ 4 · SERVER LIBRARIES ════════ -->
+      <div class="section sec-libs">
+        <div class="section-label">Server Libraries – lib/</div>
+        <div class="cards">
+          <div class="card">
+            <div class="card-icon">🧠</div>
+            <div class="card-title">generate.js</div>
+            <div class="card-desc">Claude Opus streaming – auto-continues on truncation (up to 4 continuations)</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">💬</div>
+            <div class="card-title">chat.js</div>
+            <div class="card-desc">Sonnet orchestrator – 5 tools: save_fields, 3 lookups, complete_form</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">🔢</div>
+            <div class="card-title">reference.js</div>
+            <div class="card-desc">PREFIX-YEAR-XXXX – known form→prefix map with auto-fallback initials</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">✉️</div>
+            <div class="card-title">email.js</div>
+            <div class="card-desc">Amazon SES – parallel confirmation + MDA notification emails</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">☁️</div>
+            <div class="card-title">s3.js</div>
+            <div class="card-desc">S3 wrapper – put, get, getRange, list, head operations</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">🎭</div>
+            <div class="card-title">mock-apis.js</div>
+            <div class="card-desc">Trident ID + Vehicle + Business – hardcoded test data, simulated latency</div>
+          </div>
+        </div>
+
+        <!-- Email templates -->
+        <div class="sub-section sec-templates" style="background:#fdf2f8;">
+          <div class="section-label">Email Templates – lib/templates/</div>
+          <div class="cards">
+            <div class="card card-wide">
+              <div class="card-icon" style="background:#fce7f3;">✅</div>
+              <div class="card-title">confirmation.js</div>
+              <div class="card-desc">Applicant email – reference number, what happens next, gov branding</div>
+            </div>
+            <div class="card card-wide">
+              <div class="card-icon" style="background:#fce7f3;">🔔</div>
+              <div class="card-title">notification.js</div>
+              <div class="card-desc">MDA admin email – full form data table, Barbados timezone</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow"><span><span class="arrow-down"></span> calls external services</span></div>
+
+      <!-- ════════ 5 · EXTERNAL SERVICES ════════ -->
+      <div class="section sec-external">
+        <div class="section-label">External Services</div>
+        <div class="cards">
+          <div class="card">
+            <div class="card-icon">🤖</div>
+            <div class="card-title">Anthropic Claude API</div>
+            <div class="card-desc">Opus for generation (32K tokens), Sonnet for chat (tool use)</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">📦</div>
+            <div class="card-title">Amazon S3</div>
+            <div class="card-desc">Prototype + asset storage – synced on startup, 1-hr cache</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">📧</div>
+            <div class="card-title">Amazon SES</div>
+            <div class="card-desc">Transactional email – SES-verified sender address</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">🔤</div>
+            <div class="card-title">Google Fonts</div>
+            <div class="card-desc">Figtree typeface – weights 300–900</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">🌊</div>
+            <div class="card-title">Tailwind CDN</div>
+            <div class="card-desc">CSS utility framework – extended by govbb config</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════ 6 · CONFIGURATION ════════ -->
+      <div class="section sec-config">
+        <div class="section-label">Configuration &amp; System Prompt</div>
+        <div class="cards">
+          <div class="card card-wide">
+            <div class="card-icon">🔐</div>
+            <div class="card-title">.env</div>
+            <div class="card-desc">AWS creds, Anthropic key, SES sender/MDA emails, S3 bucket, port</div>
+          </div>
+          <div class="card card-wide">
+            <div class="card-icon">📖</div>
+            <div class="card-title">CLAUDE.md</div>
+            <div class="card-desc">891-line system prompt – design system, component patterns, form rules, writing guide</div>
+          </div>
+          <div class="card card-wide">
+            <div class="card-icon">📄</div>
+            <div class="card-title">specs/</div>
+            <div class="card-desc">PDF form specifications – uploaded by designers, parsed by pdf-parse</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /main-col -->
+
+    <!-- ════════ SIDE PANELS ════════ -->
+    <div class="side-col">
+
+      <!-- Data Flows -->
+      <div class="side-panel sec-flows">
+        <div class="section-label">Key Data Flows</div>
+
+        <div class="anno-card">
+          <span class="anno-icon" style="background:#ecfdf5;">🔄</span>
+          <div>
+            <div class="anno-title">Prototype Generation</div>
+            <div class="anno-desc">PDF spec → pdf-parse → Claude Opus stream → auto-continue if truncated (up to 5 calls) → stitch HTML → S3 upload → URL returned</div>
+          </div>
+        </div>
+
+        <div class="anno-card">
+          <span class="anno-icon" style="background:#eff6ff;">📨</span>
+          <div>
+            <div class="anno-title">Form Submission</div>
+            <div class="anno-desc">GovBB.next() → POST /api/submit → generate ref (PREFIX-YEAR-XXXX) → parallel SES emails → ref on confirmation page</div>
+          </div>
+        </div>
+
+        <div class="anno-card">
+          <span class="anno-icon" style="background:#f5f3ff;">💬</span>
+          <div>
+            <div class="anno-title">Chat Form-Filling</div>
+            <div class="anno-desc">chat.html extracts form script → Claude Sonnet multi-turn → tool loop (save_fields, lookups, complete_form) → triggers /api/submit</div>
+          </div>
+        </div>
+
+        <div class="anno-card">
+          <span class="anno-icon" style="background:#fff7ed;">🪪</span>
+          <div>
+            <div class="anno-title">Citizen Lookup</div>
+            <div class="anno-desc">GovBB.tridentIdLookup() → POST /api/trident-id → citizen data → confirm → populates name, DOB, address, etc.</div>
+          </div>
+        </div>
+
+        <div class="anno-card">
+          <span class="anno-icon" style="background:#fff7ed;">🚗</span>
+          <div>
+            <div class="anno-title">Vehicle Lookup</div>
+            <div class="anno-desc">GovBB.vehicleLookup() → POST /api/vehicle-lookup → make, model, colour, engine/chassis → confirm → populates fields</div>
+          </div>
+        </div>
+
+        <div class="anno-card">
+          <span class="anno-icon" style="background:#fff7ed;">🏢</span>
+          <div>
+            <div class="anno-title">Business Lookup</div>
+            <div class="anno-desc">GovBB.businessLookup() → POST /api/business-lookup → CAIPO entity data, TIN, NIS, directors → confirm → populates fields</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dependencies -->
+      <div class="side-panel sec-deps">
+        <div class="section-label">Dependencies</div>
+        <div class="dep-list">
+          <span class="dep-tag"><strong>express</strong> <span class="ver">^4.21.0</span></span>
+          <span class="dep-tag"><strong>@anthropic-ai/sdk</strong> <span class="ver">^0.39.0</span></span>
+          <span class="dep-tag"><strong>@aws-sdk/client-s3</strong> <span class="ver">^3.1009</span></span>
+          <span class="dep-tag"><strong>@aws-sdk/client-ses</strong> <span class="ver">^3.1009</span></span>
+          <span class="dep-tag"><strong>multer</strong> <span class="ver">^1.4.5</span></span>
+          <span class="dep-tag"><strong>pdf-parse</strong> <span class="ver">^1.1.1</span></span>
+          <span class="dep-tag"><strong>dotenv</strong> <span class="ver">^16.4.0</span></span>
+        </div>
+      </div>
+
+      <!-- Design System -->
+      <div class="side-panel sec-config" style="border-color:#e2e8f0;">
+        <div class="section-label">Design System – alpha.gov.bb</div>
+        <div style="padding-top: 4px;">
+          <div style="font-size:12px; color:#374151; font-weight:600; margin-bottom:6px;">Figtree 300–900</div>
+          <div style="font-size:10.5px; color:#6b7280; line-height:1.6; margin-bottom:12px;">
+            Tailwind utilities with <strong style="color:#111">bb-</strong> prefixed colour tokens.<br>
+            CSS custom properties on :root.
+          </div>
+          <div style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px;">
+            <span class="swatch" style="background:#ffc726;" title="bb-yellow-100"></span>
+            <span class="swatch" style="background:#00267f;" title="bb-blue-100"></span>
+            <span class="swatch" style="background:#0e5f64;" title="bb-teal-00"></span>
+            <span class="swatch" style="background:#30c0c8;" title="bb-teal-100"></span>
+            <span class="swatch" style="background:#a42c2c;" title="bb-red-00"></span>
+            <span class="swatch" style="background:#1fbf84;" title="bb-green-100"></span>
+            <span class="swatch" style="background:#a962c7;" title="bb-purple-100"></span>
+            <span class="swatch" style="background:#595959;" title="bb-mid-grey-00"></span>
+            <span class="swatch" style="background:#000;" title="bb-black-00"></span>
+          </div>
+          <div style="font-size:10.5px; color:#6b7280; line-height:1.6;">
+            <div style="display:flex; justify-content:space-between;"><span>Header</span> <span style="color:#111; font-weight:500;">bb-yellow-100</span></div>
+            <div style="display:flex; justify-content:space-between;"><span>Footer / Top bar</span> <span style="color:#111; font-weight:500;">bb-blue-100</span></div>
+            <div style="display:flex; justify-content:space-between;"><span>Primary action</span> <span style="color:#111; font-weight:500;">bb-teal-00</span></div>
+            <div style="display:flex; justify-content:space-between;"><span>Focus ring</span> <span style="color:#111; font-weight:500;">bb-teal-100</span></div>
+            <div style="display:flex; justify-content:space-between;"><span>Errors</span> <span style="color:#111; font-weight:500;">bb-red-00</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /side-col -->
+  </div><!-- /row -->
+
+</div><!-- /diagram -->
+
+</body>
+</html>

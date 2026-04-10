@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>WhatsApp Simulator – GovTech Barbados</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300..900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: Figtree, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: #f0f2f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  .phone-frame {
+    width: 100%;
+    max-width: 400px;
+    height: 700px;
+    background: #fff;
+    border-radius: 24px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.15);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 2px solid #e0e0e0;
+  }
+
+  /* WhatsApp header */
+  .wa-header {
+    background: #075e54;
+    color: #fff;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .wa-header .back-arrow {
+    font-size: 20px;
+    cursor: pointer;
+    text-decoration: none;
+    color: #fff;
+  }
+  .wa-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #25d366;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .wa-contact {
+    flex: 1;
+  }
+  .wa-contact-name {
+    font-weight: 600;
+    font-size: 16px;
+  }
+  .wa-contact-status {
+    font-size: 12px;
+    opacity: 0.8;
+  }
+
+  /* Chat area */
+  .wa-chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    background: #ece5dd url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 10c-11 0-20 9-20 20s9 20 20 20 20-9 20-20-9-20-20-20z' fill='none' stroke='%23d4cfc6' stroke-width='.3'/%3E%3C/svg%3E") repeat;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    scroll-behavior: smooth;
+  }
+
+  .wa-msg {
+    max-width: 80%;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.4;
+    position: relative;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+  }
+  .wa-msg-time {
+    font-size: 11px;
+    opacity: 0.5;
+    float: right;
+    margin-left: 8px;
+    margin-top: 4px;
+  }
+  .wa-msg.incoming {
+    background: #fff;
+    align-self: flex-start;
+    border-top-left-radius: 0;
+  }
+  .wa-msg.outgoing {
+    background: #dcf8c6;
+    align-self: flex-end;
+    border-top-right-radius: 0;
+  }
+
+  .wa-system-msg {
+    align-self: center;
+    background: #ffeeba;
+    color: #856404;
+    padding: 4px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    text-align: center;
+    margin: 8px 0;
+  }
+
+  /* Typing indicator */
+  .wa-typing {
+    align-self: flex-start;
+    background: #fff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border-top-left-radius: 0;
+    display: none;
+  }
+  .wa-typing.visible { display: flex; gap: 4px; align-items: center; }
+  .wa-typing-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #999;
+    animation: waTyping 1.4s infinite ease-in-out both;
+  }
+  .wa-typing-dot:nth-child(1) { animation-delay: 0s; }
+  .wa-typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .wa-typing-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes waTyping {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+
+  /* Completion panel */
+  .wa-completion {
+    align-self: center;
+    background: #25d366;
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 8px;
+    text-align: center;
+    margin: 12px 0;
+  }
+  .wa-completion strong { display: block; font-size: 16px; margin-bottom: 4px; }
+  .wa-completion .ref { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+
+  /* Input area */
+  .wa-input-area {
+    background: #f0f2f5;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .wa-input {
+    flex: 1;
+    border: none;
+    background: #fff;
+    border-radius: 24px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+  }
+  .wa-send-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #25d366;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .wa-send-btn:hover { background: #1da851; }
+  .wa-send-btn:disabled { background: #ccc; cursor: not-allowed; }
+  .wa-send-btn svg { fill: #fff; }
+
+  /* Setup screen */
+  .setup-screen {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1;
+    justify-content: center;
+  }
+  .setup-screen h2 { font-size: 18px; color: #075e54; }
+  .setup-screen label { font-size: 13px; font-weight: 600; color: #333; }
+  .setup-screen input, .setup-screen select {
+    width: 100%;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .setup-screen .start-btn {
+    background: #25d366;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .setup-screen .start-btn:hover { background: #1da851; }
+  .setup-screen p { font-size: 12px; color: #888; }
+
+  /* Info bar */
+  .info-bar {
+    background: #fff3cd;
+    color: #856404;
+    padding: 8px 16px;
+    font-size: 12px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="phone-frame">
+  <!-- WhatsApp header -->
+  <div class="wa-header">
+    <a class="back-arrow" onclick="showSetup()">&larr;</a>
+    <div class="wa-avatar">BB</div>
+    <div class="wa-contact">
+      <div class="wa-contact-name" id="wa-title">GovTech Barbados</div>
+      <div class="wa-contact-status" id="wa-status">online</div>
+    </div>
+  </div>
+
+  <div class="info-bar">WhatsApp Simulator &mdash; local testing mode</div>
+
+  <!-- Setup screen (shown first) -->
+  <div class="setup-screen" id="setup-screen">
+    <h2>Start a WhatsApp session</h2>
+    <div>
+      <label>Your phone number</label>
+      <input type="tel" id="setup-phone" value="+1-246-555-0100" placeholder="+1-246-555-0100">
+    </div>
+    <div>
+      <label>Service to complete</label>
+      <select id="setup-form">
+        <option value="">Loading services...</option>
+      </select>
+    </div>
+    <button class="start-btn" onclick="startSession()">Start conversation</button>
+    <p>This simulator lets you test the WhatsApp channel locally. Messages are processed by the same AI that powers the chat and form channels.</p>
+  </div>
+
+  <!-- Chat area (hidden initially) -->
+  <div class="wa-chat" id="wa-chat" style="display:none">
+    <div class="wa-typing" id="wa-typing">
+      <div class="wa-typing-dot"></div>
+      <div class="wa-typing-dot"></div>
+      <div class="wa-typing-dot"></div>
+    </div>
+  </div>
+
+  <!-- Input area (hidden initially) -->
+  <div class="wa-input-area" id="wa-input-area" style="display:none">
+    <input type="text" class="wa-input" id="wa-input" placeholder="Type a message" autocomplete="off">
+    <button class="wa-send-btn" id="wa-send-btn" onclick="sendMessage()">
+      <svg width="20" height="20" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+var phone = '';
+var formName = '';
+var formScript = '';
+var sending = false;
+var sessionStarted = false;
+
+var chatEl = document.getElementById('wa-chat');
+var typingEl = document.getElementById('wa-typing');
+var inputEl = document.getElementById('wa-input');
+var sendBtn = document.getElementById('wa-send-btn');
+var setupEl = document.getElementById('setup-screen');
+var inputAreaEl = document.getElementById('wa-input-area');
+
+// Load available prototypes
+async function loadPrototypes() {
+  try {
+    var res = await fetch('/api/prototypes');
+    var data = await res.json();
+    var select = document.getElementById('setup-form');
+    if (data.prototypes && data.prototypes.length > 0) {
+      select.innerHTML = data.prototypes.map(function(p) {
+        return '<option value="' + p.filename + '">' + (p.title || p.filename) + '</option>';
+      }).join('');
+    } else {
+      select.innerHTML = '<option value="">No prototypes found</option>';
+    }
+  } catch (e) {
+    console.error('Failed to load prototypes:', e);
+  }
+}
+
+// Extract form script from prototype HTML
+async function loadFormScript(filename) {
+  var res = await fetch('/' + filename);
+  var html = await res.text();
+
+  var titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  formName = titleMatch ? titleMatch[1].split(/\s*[–—|]\s*/)[0].trim() : 'Form';
+
+  var scripts = html.match(/<script(?!\s+src)[^>]*>([\s\S]*?)<\/script>/g);
+  if (scripts && scripts.length > 0) {
+    var lastScript = scripts[scripts.length - 1];
+    formScript = lastScript.replace(/<\/?script[^>]*>/g, '').trim();
+  }
+
+  document.getElementById('wa-title').textContent = formName;
+}
+
+function showSetup() {
+  setupEl.style.display = 'flex';
+  chatEl.style.display = 'none';
+  inputAreaEl.style.display = 'none';
+  sessionStarted = false;
+}
+
+async function startSession() {
+  phone = document.getElementById('setup-phone').value.trim();
+  var filename = document.getElementById('setup-form').value;
+
+  if (!phone || !filename) return;
+
+  await loadFormScript(filename);
+
+  setupEl.style.display = 'none';
+  chatEl.style.display = 'flex';
+  inputAreaEl.style.display = 'flex';
+
+  // Clear previous messages
+  chatEl.querySelectorAll('.wa-msg, .wa-system-msg, .wa-completion').forEach(function(el) { el.remove(); });
+
+  addSystemMsg('Conversation started');
+  sessionStarted = true;
+
+  // Send initial message to start the conversation
+  await doSend('Hi, I would like to complete this form.');
+  inputEl.focus();
+}
+
+function getTime() {
+  var d = new Date();
+  return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+}
+
+function addMessage(type, text) {
+  var div = document.createElement('div');
+  div.className = 'wa-msg ' + type;
+  div.innerHTML = text + '<span class="wa-msg-time">' + getTime() + '</span>';
+  chatEl.insertBefore(div, typingEl);
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function addSystemMsg(text) {
+  var div = document.createElement('div');
+  div.className = 'wa-system-msg';
+  div.textContent = text;
+  chatEl.insertBefore(div, typingEl);
+}
+
+function showCompletion(ref) {
+  var div = document.createElement('div');
+  div.className = 'wa-completion';
+  div.innerHTML = '<strong>Application submitted</strong><div class="ref">' + ref + '</div>';
+  chatEl.insertBefore(div, typingEl);
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function setLoading(on) {
+  sending = on;
+  sendBtn.disabled = on;
+  inputEl.disabled = on;
+  if (on) {
+    typingEl.classList.add('visible');
+    document.getElementById('wa-status').textContent = 'typing...';
+  } else {
+    typingEl.classList.remove('visible');
+    document.getElementById('wa-status').textContent = 'online';
+  }
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+async function doSend(text) {
+  setLoading(true);
+
+  try {
+    var body = { phone: phone, message: text };
+    if (!sessionStarted || !formScript) {
+      body.formName = formName;
+      body.formScript = formScript;
+    }
+    // Always include formName and formScript so session can be created
+    body.formName = formName;
+    body.formScript = formScript;
+
+    var res = await fetch('/api/whatsapp/simulator', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    var data = await res.json();
+    setLoading(false);
+
+    if (!data.success) {
+      addMessage('incoming', 'Sorry, something went wrong. Please try again.');
+      return;
+    }
+
+    addMessage('incoming', data.reply);
+
+    if (data.complete && data.referenceNumber) {
+      showCompletion(data.referenceNumber);
+      addSystemMsg('Session ended');
+      inputEl.disabled = true;
+      sendBtn.disabled = true;
+    }
+  } catch (err) {
+    setLoading(false);
+    addMessage('incoming', 'Connection error. Please try again.');
+  }
+}
+
+async function sendMessage() {
+  var text = inputEl.value.trim();
+  if (!text || sending) return;
+
+  inputEl.value = '';
+  addMessage('outgoing', text);
+  await doSend(text);
+  inputEl.focus();
+}
+
+// Enter key to send
+inputEl.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+// Auto-select form from query param and auto-start
+async function initPage() {
+  await loadPrototypes();
+  var params = new URLSearchParams(window.location.search);
+  var formParam = params.get('form');
+  if (formParam) {
+    var select = document.getElementById('setup-form');
+    for (var i = 0; i < select.options.length; i++) {
+      if (select.options[i].value === formParam) {
+        select.value = formParam;
+        break;
+      }
+    }
+  }
+}
+initPage();
+</script>
+</body>
+</html>

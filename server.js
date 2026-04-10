@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: true });
 
 const express = require('express');
 const path = require('path');
@@ -8,6 +8,10 @@ const pdfParse = require('pdf-parse');
 const { generateReference } = require('./lib/reference');
 const { sendConfirmation, sendNotification } = require('./lib/email');
 const { generatePrototype } = require('./lib/generate');
+const { chat } = require('./lib/chat');
+const { lookupCitizen, lookupVehicle, lookupBusiness } = require('./lib/mock-apis');
+const cms = require('./lib/cases');
+const whatsapp = require('./lib/whatsapp');
 const s3 = require('./lib/s3');
 
 const app = express();
@@ -169,6 +173,9 @@ app.post('/api/submit', async (req, res) => {
   // Generate reference number
   const referenceNumber = generateReference(formName);
 
+  // Create case in CMS
+  cms.createCase({ referenceNumber, formName, formData, userEmail, channel: 'form' });
+
   console.log(`\n━━━ New Submission ━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.log(`  Form:      ${formName}`);
   console.log(`  Reference: ${referenceNumber}`);
@@ -195,6 +202,30 @@ app.post('/api/submit', async (req, res) => {
   });
 });
 
+// ── POST /api/trident-id ────────────────────────────────────
+app.post('/api/trident-id', (req, res) => {
+  const { nationalId } = req.body;
+  const result = lookupCitizen(nationalId);
+  // Simulate network latency (500-1000ms)
+  setTimeout(() => res.json(result), 500 + Math.random() * 500);
+});
+
+// ── POST /api/vehicle-lookup ────────────────────────────────
+app.post('/api/vehicle-lookup', (req, res) => {
+  const { plate } = req.body;
+  const result = lookupVehicle(plate);
+  // Simulate network latency (500-1000ms)
+  setTimeout(() => res.json(result), 500 + Math.random() * 500);
+});
+
+// ── POST /api/business-lookup ──────────────────────────────
+app.post('/api/business-lookup', (req, res) => {
+  const { registrationNumber } = req.body;
+  const result = lookupBusiness(registrationNumber);
+  // Simulate network latency (500-1000ms)
+  setTimeout(() => res.json(result), 500 + Math.random() * 500);
+});
+
 // ── S3 proxy: serve assets ──────────────────────────────────
 app.get('/assets/:filename', async (req, res) => {
   const filename = req.params.filename;
@@ -218,8 +249,8 @@ app.get('/assets/:filename', async (req, res) => {
 });
 
 // ── S3 proxy: serve prototypes ──────────────────────────────
-app.get('/:filename.html', async (req, res) => {
-  const filename = `${req.params.filename}.html`;
+app.get(/^\/([a-z0-9][a-z0-9\-]*\.html)$/i, async (req, res) => {
+  const filename = req.params[0];
   const s3Key = `prototypes/${filename}`;
 
   try {
@@ -234,6 +265,188 @@ app.get('/:filename.html', async (req, res) => {
     console.error(`  S3 prototype error (${s3Key}):`, err.message);
     return res.status(500).send('Internal server error');
   }
+});
+
+// ── POST /api/chat ──────────────────────────────────────────
+app.post('/api/chat', async (req, res) => {
+  const { conversationId, formName, formScript, message } = req.body;
+
+  // First message must include formName and formScript
+  if (!conversationId && (!formName || !formScript)) {
+    return res.status(400).json({
+      success: false,
+      error: 'First message must include formName and formScript.',
+    });
+  }
+
+  try {
+    const result = await chat({ conversationId, formName, formScript, message });
+
+    // If the form is complete, submit it
+    if (result.complete) {
+      const referenceNumber = generateReference(result.formData['form-name'] || formName || 'Chat Form');
+      const userEmail = result.formData['contact-email'] || result.formData['email'] || null;
+
+      // Create case in CMS
+      cms.createCase({
+        referenceNumber,
+        formName: formName || 'Chat Form',
+        formData: result.formData,
+        userEmail,
+        channel: 'chat',
+      });
+
+      console.log(`\n━━━ Chat Submission ━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`  Form:      ${formName || 'Chat Form'}`);
+      console.log(`  Reference: ${referenceNumber}`);
+      console.log(`  Fields:    ${Object.keys(result.formData).length}`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+
+      // Send emails in background (don't block the response)
+      Promise.allSettled([
+        sendConfirmation(userEmail, formName, referenceNumber),
+        sendNotification(formName, result.formData, referenceNumber, userEmail),
+      ]);
+
+      return res.json({
+        success: true,
+        conversationId: result.conversationId,
+        reply: result.reply,
+        fields: result.fields,
+        formData: result.formData,
+        complete: true,
+        referenceNumber,
+      });
+    }
+
+    return res.json({
+      success: true,
+      conversationId: result.conversationId,
+      reply: result.reply,
+      fields: result.fields,
+      formData: result.formData,
+      complete: false,
+    });
+
+  } catch (err) {
+    console.error('  Chat error:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Something went wrong. Please try again.',
+    });
+  }
+});
+
+// ── WhatsApp webhook ───────────────────────────────────────
+app.get('/api/whatsapp/webhook', whatsapp.verifyWebhook);
+app.post('/api/whatsapp/webhook', whatsapp.handleWebhook);
+app.post('/api/whatsapp/simulator', whatsapp.handleSimulator);
+
+// ── CMS: Authentication ────────────────────────────────────
+
+function requireAuth(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorised' });
+  }
+  const session = cms.getSession(auth.slice(7));
+  if (!session) {
+    return res.status(401).json({ error: 'Session expired or invalid' });
+  }
+  req.caseworker = session;
+  next();
+}
+
+app.post('/api/cms/login', (req, res) => {
+  const { username, password } = req.body;
+  const result = cms.login(username, password);
+  if (!result) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+  return res.json({ success: true, ...result });
+});
+
+app.post('/api/cms/logout', (req, res) => {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) {
+    cms.logout(auth.slice(7));
+  }
+  return res.json({ success: true });
+});
+
+// ── CMS: Cases ─────────────────────────────────────────────
+
+app.get('/api/cms/cases', requireAuth, (req, res) => {
+  const filters = {};
+  if (req.query.status) filters.status = req.query.status;
+  if (req.query.formName) filters.formName = req.query.formName;
+  const caseList = cms.listCases(Object.keys(filters).length ? filters : null);
+  const counts = cms.getCaseCounts();
+  const formNames = cms.getFormNames();
+  return res.json({ cases: caseList, counts, formNames });
+});
+
+app.get('/api/cms/cases/:id', requireAuth, (req, res) => {
+  const c = cms.getCase(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Case not found' });
+  return res.json(c);
+});
+
+app.post('/api/cms/cases/:id/approve', requireAuth, async (req, res) => {
+  const { notes, credentialType, credentialSubject, validityYears } = req.body;
+  const c = cms.approveCase(req.params.id, req.caseworker.name, notes);
+  if (!c) return res.status(404).json({ error: 'Case not found' });
+
+  // If credential details provided, issue to wallet
+  if (credentialType && credentialSubject) {
+    const nationalId = c.formData['national-id'] || c.formData['nationalId'] || null;
+    if (nationalId) {
+      try {
+        const issuerUrl = process.env.ISSUER_URL || 'http://localhost:3001';
+        const apiKey = process.env.ISSUER_API_KEY || '';
+
+        const issueRes = await fetch(`${issuerUrl}/api/v1/credentials/issue`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+            'X-Request-Id': `cms-${c.id}-${Date.now()}`,
+          },
+          body: JSON.stringify({
+            credentialType,
+            nationalId,
+            subject: credentialSubject,
+            caseReference: c.id,
+            validityYears: validityYears || undefined,
+          }),
+        });
+
+        const issueResult = await issueRes.json();
+
+        if (issueRes.ok && issueResult.credentialId) {
+          cms.recordCredential(c.id, issueResult.credentialId, issueResult.deliveredToWallet);
+          c.credentialId = issueResult.credentialId;
+          c.credentialDelivered = issueResult.deliveredToWallet;
+          console.log(`  ✓ Credential issued: ${issueResult.credentialId}`);
+        } else {
+          console.error(`  ✗ Credential issuance failed:`, issueResult.error || issueResult);
+          c._credentialError = issueResult.error || 'Issuance failed';
+        }
+      } catch (err) {
+        console.error(`  ✗ Could not reach issuer service:`, err.message);
+        c._credentialError = `Could not reach issuer service: ${err.message}`;
+      }
+    }
+  }
+
+  return res.json({ success: true, case: c });
+});
+
+app.post('/api/cms/cases/:id/reject', requireAuth, (req, res) => {
+  const { notes } = req.body;
+  const c = cms.rejectCase(req.params.id, req.caseworker.name, notes);
+  if (!c) return res.status(404).json({ error: 'Case not found' });
+  return res.json({ success: true, case: c });
 });
 
 // ── Multer error handler ────────────────────────────────────

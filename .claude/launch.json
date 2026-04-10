@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "node",
+      "runtimeExecutable": "/Users/abisola/.nvm/versions/node/v25.2.1/bin/node",
       "runtimeArgs": ["server.js"],
       "port": 3000
     }

@@ -1,0 +1,127 @@
+---
+title: GovTech Barbados – Form Prototype Generator Architecture
+---
+
+graph TB
+    subgraph Client["Client Layer"]
+        direction TB
+        GenUI["index.html<br/><i>Generator UI</i><br/>Upload PDF spec or paste text"]
+        ProtoList["prototypes.html<br/><i>Prototype Listing</i><br/>Browse generated forms"]
+        ChatUI["chat.html<br/><i>Chat Form UI</i><br/>Conversational form-filling"]
+        Proto["Generated Prototype<br/><i>Single HTML file per form</i><br/>Multi-page clickable form"]
+    end
+
+    subgraph Framework["Shared Frontend Assets  (public/assets/)"]
+        direction LR
+        TW["govbb-tailwind-config.js<br/><i>Tailwind theme with bb- prefix</i><br/>Colours, spacing, typography"]
+        CSS["govbb-base.css<br/><i>CSS custom properties</i><br/>Body grid, container, sr-only"]
+        FW["govbb-framework.js<br/><i>~850 lines</i><br/>Navigation, templates,<br/>validation, submission"]
+    end
+
+    subgraph Server["Express Server  (server.js, port 3000)"]
+        direction TB
+        Static["Static file serving<br/><i>public/</i>"]
+        S3Proxy["S3 Asset Proxy<br/><i>GET /assets/:file</i><br/><i>GET /:name.html</i>"]
+
+        subgraph APIs["API Endpoints"]
+            direction TB
+            GenAPI["POST /api/generate<br/><i>Generate prototype from spec</i>"]
+            SubmitAPI["POST /api/submit<br/><i>Form submission + emails</i>"]
+            ChatAPI["POST /api/chat<br/><i>Conversational form assistant</i>"]
+            TridentAPI["POST /api/trident-id<br/><i>Mock citizen identity lookup</i>"]
+            VehicleAPI["POST /api/vehicle-lookup<br/><i>Mock vehicle details lookup</i>"]
+            ListAPI["GET /api/prototypes<br/><i>List generated prototypes</i>"]
+        end
+    end
+
+    subgraph Libs["Server Libraries  (lib/)"]
+        direction TB
+        Generate["generate.js<br/><i>Claude API caller</i><br/>Streams + auto-continues<br/>on truncation"]
+        Reference["reference.js<br/><i>Reference number generator</i><br/>PREFIX-YEAR-XXXX"]
+        Email["email.js<br/><i>Amazon SES sender</i>"]
+        ChatLib["chat.js<br/><i>Chat orchestrator</i><br/>Tool-based conversation<br/>In-memory session store"]
+        MockAPIs["mock-apis.js<br/><i>Trident ID + Vehicle</i><br/>4 test citizens, 4 test vehicles<br/>Simulated 500-1000ms latency"]
+        S3Lib["s3.js<br/><i>AWS S3 helper</i><br/>Upload, list, read objects"]
+
+        subgraph Templates["Email Templates  (lib/templates/)"]
+            ConfTpl["confirmation.js<br/><i>Applicant confirmation</i>"]
+            NotifTpl["notification.js<br/><i>MDA admin notification</i>"]
+        end
+    end
+
+    subgraph External["External Services"]
+        direction TB
+        Claude["Anthropic Claude API<br/><i>Opus for generation</i><br/><i>Sonnet for chat</i>"]
+        SES["Amazon SES<br/><i>Transactional email</i>"]
+        S3["Amazon S3<br/><i>Prototype + asset storage</i>"]
+        GFonts["Google Fonts<br/><i>Figtree typeface</i>"]
+        TailwindCDN["Tailwind CDN<br/><i>CSS utility framework</i>"]
+    end
+
+    subgraph Specs["Form Specifications  (specs/)"]
+        PDF["PDF form specs<br/><i>Uploaded by designers</i>"]
+    end
+
+    subgraph Config["Configuration"]
+        Env[".env<br/><i>AWS credentials, API keys,</i><br/><i>email addresses, port</i>"]
+        ClaudeMD["CLAUDE.md<br/><i>59KB system prompt</i><br/>Design system, component patterns,<br/>form structure rules, writing style"]
+    end
+
+    %% ── Client → Server ──
+    GenUI -- "POST /api/generate<br/>(PDF or text)" --> GenAPI
+    ProtoList -- "GET /api/prototypes" --> ListAPI
+    ChatUI -- "POST /api/chat<br/>(conversationId, message)" --> ChatAPI
+    Proto -- "POST /api/submit<br/>(formData, userEmail)" --> SubmitAPI
+    Proto -- "POST /api/trident-id<br/>(nationalId)" --> TridentAPI
+    Proto -- "POST /api/vehicle-lookup<br/>(plate)" --> VehicleAPI
+
+    %% ── Framework loading ──
+    Proto -- "loads" --> TW
+    Proto -- "loads" --> CSS
+    Proto -- "loads" --> FW
+    Proto -- "loads" --> TailwindCDN
+    Proto -- "loads" --> GFonts
+
+    %% ── Server → Libs ──
+    GenAPI --> Generate
+    SubmitAPI --> Reference
+    SubmitAPI --> Email
+    ChatAPI --> ChatLib
+    TridentAPI --> MockAPIs
+    VehicleAPI --> MockAPIs
+    S3Proxy --> S3Lib
+
+    %% ── Libs → External ──
+    Generate -- "Stream completions<br/>(claude-opus-4)" --> Claude
+    Generate -- "Read system prompt" --> ClaudeMD
+    Generate -- "Upload HTML" --> S3
+    ChatLib -- "Multi-turn conversation<br/>(claude-sonnet-4)" --> Claude
+    Email -- "Send emails" --> SES
+    Email --> ConfTpl
+    Email --> NotifTpl
+    S3Lib --> S3
+
+    %% ── Specs ──
+    GenUI -- "Upload PDF" --> PDF
+    GenAPI -- "pdf-parse extracts text" --> PDF
+
+    %% ── Config ──
+    Server -. "reads on startup" .-> Env
+
+    %% ── S3 sync on startup ──
+    Server -. "syncs assets to S3<br/>on startup" .-> S3
+
+    %% ── Styling ──
+    classDef client fill:#eaf9f9,stroke:#0e5f64,stroke-width:2px,color:#000
+    classDef framework fill:#fff9e9,stroke:#e8a833,stroke-width:2px,color:#000
+    classDef server fill:#e5e9f2,stroke:#00267f,stroke-width:2px,color:#000
+    classDef lib fill:#e9f9f3,stroke:#00654a,stroke-width:2px,color:#000
+    classDef external fill:#fff0f0,stroke:#a42c2c,stroke-width:2px,color:#000
+    classDef config fill:#f5f5f5,stroke:#595959,stroke-width:1px,color:#000
+
+    class GenUI,ProtoList,ChatUI,Proto client
+    class TW,CSS,FW framework
+    class Static,S3Proxy,GenAPI,SubmitAPI,ChatAPI,TridentAPI,VehicleAPI,ListAPI server
+    class Generate,Reference,Email,ChatLib,MockAPIs,S3Lib,ConfTpl,NotifTpl lib
+    class Claude,SES,S3,GFonts,TailwindCDN external
+    class Env,ClaudeMD,PDF config

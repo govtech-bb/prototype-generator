@@ -3,13 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Generated Prototypes – GovTech Barbados</title>
+<title>Chat – GovTech Barbados</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300..900&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/assets/govbb-tailwind-config.js"></script>
 <link rel="stylesheet" href="/assets/govbb-base.css">
+<style>
+  /* Override grid to make chat fill available space */
+  body { grid-template-rows: auto auto auto 1fr auto; }
+  main { display: flex; flex-direction: column; min-height: 0; }
+  .chat-container { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+  }
+  .chat-input-area { flex-shrink: 0; }
+
+  /* Typing dots animation */
+  .typing-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #595959;
+    animation: typingBounce 1.4s infinite ease-in-out both;
+  }
+  .typing-dot:nth-child(1) { animation-delay: 0s; }
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes typingBounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+</style>
 </head>
 <body>
 
@@ -39,18 +67,47 @@
 
 <!-- Main -->
 <main>
-  <div class="container py-l max-w-3xl">
+  <div class="container py-8 max-w-3xl chat-container">
 
-    <a href="/"
-      class="inline-flex items-center gap-xs outline-none underline-offset-2 underline hover:no-underline active:bg-bb-yellow-100 focus-visible:bg-bb-yellow-100 text-bb-teal-00 hover:text-bb-black-00 hover:bg-bb-teal-10 mb-8">
-      &larr; Back to generator
-    </a>
+    <!-- Header area -->
+    <div class="mb-4" id="chat-header">
+      <p class="text-bb-mid-grey-00 text-[1rem]">Loading form...</p>
+    </div>
 
-    <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-2">Generated prototypes</h1>
-    <p class="text-bb-mid-grey-00 mb-8">All form prototypes that have been created.</p>
+    <!-- Chat messages -->
+    <div class="chat-messages border-2 border-bb-grey-00 rounded-sm bg-white p-4 mb-4" id="chat-messages">
+      <!-- Messages injected here -->
+    </div>
 
-    <div id="prototypes-list">
-      <p class="text-bb-mid-grey-00">Loading...</p>
+    <!-- Completion panel (hidden by default) -->
+    <div class="hidden" id="chat-complete">
+      <div class="bg-bb-teal-00 text-bb-white-00 p-8 rounded-sm space-y-4">
+        <h2 class="font-bold text-[2.5rem] leading-[1.15]">Application submitted</h2>
+        <p class="text-[1.25rem]">Your reference number</p>
+        <p class="text-[2rem] font-bold" id="chat-ref-number"></p>
+      </div>
+      <div class="mt-8 space-y-4">
+        <p>We have sent a confirmation to your email address.</p>
+        <p>We will review your application and get back to you within 5 working days.</p>
+        <a id="chat-back-link" href="#"
+          class="inline-flex outline-none underline-offset-2 underline hover:no-underline active:bg-bb-yellow-100 focus-visible:bg-bb-yellow-100 text-bb-teal-00 hover:text-bb-black-00 hover:bg-bb-teal-10 font-bold">
+          Return to form
+        </a>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="chat-input-area flex gap-2" id="chat-input-area">
+      <div class="relative inline-flex flex-1 rounded-sm border-2 border-bb-black-00 items-center transition-all bg-bb-white-00 hover:shadow-form-hover focus-within:ring-4 focus-within:ring-bb-teal-100">
+        <input type="text" id="chat-input"
+          class="w-full min-w-0 p-s outline-none rounded-[inherit]"
+          placeholder="Type your answer..."
+          autocomplete="off" />
+      </div>
+      <button type="button" id="chat-send"
+        class="relative inline-flex items-center justify-center gap-2 text-[20px] whitespace-nowrap transition-[background-color,box-shadow] duration-200 outline-none bg-bb-teal-00 text-bb-white-00 hover:bg-[#1a777d] active:bg-[#0a4549] px-xm py-s rounded-sm leading-[1.7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-1 focus-visible:ring-bb-teal-100 disabled:opacity-50 disabled:cursor-not-allowed">
+        Send
+      </button>
     </div>
 
   </div>
@@ -71,64 +128,202 @@
 </footer>
 
 <script>
-async function loadPrototypes() {
-  const container = document.getElementById('prototypes-list');
-  try {
-    const res = await fetch('/api/prototypes');
-    const data = await res.json();
-    const list = data.prototypes || [];
+(function () {
+  'use strict';
 
-    if (list.length === 0) {
-      container.innerHTML = '<p class="text-bb-mid-grey-00">No prototypes have been generated yet.</p>';
+  /* ── State ── */
+  let conversationId = null;
+  let formName = '';
+  let formScript = '';
+  let sending = false;
+
+  /* ── DOM refs ── */
+  const messagesEl = document.getElementById('chat-messages');
+  const inputEl = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send');
+  const headerEl = document.getElementById('chat-header');
+  const inputArea = document.getElementById('chat-input-area');
+  const completeEl = document.getElementById('chat-complete');
+  const refNumberEl = document.getElementById('chat-ref-number');
+  const backLinkEl = document.getElementById('chat-back-link');
+
+  /* ── Helpers ── */
+  function esc(text) {
+    var d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+  }
+
+  function addMessage(role, text) {
+    var div = document.createElement('div');
+    div.className = role === 'bot'
+      ? 'flex gap-3 items-start mb-4'
+      : 'flex gap-3 items-start mb-4 justify-end';
+
+    if (role === 'bot') {
+      div.innerHTML =
+        '<div class="shrink-0 w-10 h-10 rounded-full bg-bb-blue-100 flex items-center justify-center text-white text-[0.875rem] font-bold mt-1">BB</div>' +
+        '<div class="bg-bb-blue-10 rounded-sm px-4 py-3 max-w-[80%]"><p class="text-[1.125rem] leading-relaxed whitespace-pre-wrap">' + esc(text) + '</p></div>';
+    } else {
+      div.innerHTML =
+        '<div class="bg-bb-teal-00 text-bb-white-00 rounded-sm px-4 py-3 max-w-[80%]"><p class="text-[1.125rem] leading-relaxed whitespace-pre-wrap">' + esc(text) + '</p></div>';
+    }
+
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function showTyping() {
+    var div = document.createElement('div');
+    div.className = 'flex gap-3 items-start mb-4';
+    div.id = 'typing-indicator';
+    div.innerHTML =
+      '<div class="shrink-0 w-10 h-10 rounded-full bg-bb-blue-100 flex items-center justify-center text-white text-[0.875rem] font-bold mt-1">BB</div>' +
+      '<div class="bg-bb-blue-10 rounded-sm px-4 py-3"><div class="flex gap-1.5 py-1"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div></div>';
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function hideTyping() {
+    var el = document.getElementById('typing-indicator');
+    if (el) el.remove();
+  }
+
+  function setLoading(loading) {
+    sending = loading;
+    sendBtn.disabled = loading;
+    inputEl.disabled = loading;
+  }
+
+  function showCompletion(refNumber) {
+    inputArea.classList.add('hidden');
+    completeEl.classList.remove('hidden');
+    refNumberEl.textContent = refNumber;
+  }
+
+  /* ── API ── */
+  async function sendMessage(userMessage) {
+    if (sending) return;
+    setLoading(true);
+
+    if (userMessage) {
+      addMessage('user', userMessage);
+    }
+
+    showTyping();
+
+    try {
+      var body = { conversationId: conversationId };
+      if (!conversationId) {
+        body.formName = formName;
+        body.formScript = formScript;
+      }
+      if (userMessage) {
+        body.message = userMessage;
+      }
+
+      var res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      var data = await res.json();
+
+      hideTyping();
+
+      if (!data.success) {
+        addMessage('bot', 'Sorry, something went wrong. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      conversationId = data.conversationId;
+      addMessage('bot', data.reply);
+
+      if (data.complete && data.referenceNumber) {
+        showCompletion(data.referenceNumber);
+      }
+
+    } catch (err) {
+      hideTyping();
+      addMessage('bot', 'Sorry, I could not connect. Please check your internet and try again.');
+    }
+
+    setLoading(false);
+    if (!sending) inputEl.focus();
+  }
+
+  /* ── Event listeners ── */
+  sendBtn.addEventListener('click', function () {
+    var msg = inputEl.value.trim();
+    if (!msg) return;
+    inputEl.value = '';
+    sendMessage(msg);
+  });
+
+  inputEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      var msg = inputEl.value.trim();
+      if (!msg) return;
+      inputEl.value = '';
+      sendMessage(msg);
+    }
+  });
+
+  /* ── Init: load the form spec ── */
+  async function init() {
+    var params = new URLSearchParams(window.location.search);
+    var formFile = params.get('form');
+
+    if (!formFile) {
+      headerEl.innerHTML = '<p class="text-bb-red-00">No form specified. Add ?form=filename.html to the URL.</p>';
+      inputArea.classList.add('hidden');
       return;
     }
 
-    const rows = list.map(p => {
-      const name = p.title || p.filename
-        .replace(/\.html$/, '')
-        .replace(/-[a-z0-9]{5,10}$/, '')
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, c => c.toUpperCase())
-        .trim();
-      const date = new Date(p.created).toLocaleDateString('en-GB', {
-        day: 'numeric', month: 'short', year: 'numeric'
-      });
-      const size = p.size < 1024 ? p.size + ' B'
-        : p.size < 1048576 ? (p.size / 1024).toFixed(1) + ' KB'
-        : (p.size / 1048576).toFixed(1) + ' MB';
+    // Set back link
+    backLinkEl.href = '/' + formFile;
 
-      const chatUrl = '/chat.html?form=' + encodeURIComponent(p.filename);
-      const btnCls = 'shrink-0 relative inline-flex items-center justify-center gap-2 text-[1rem] whitespace-nowrap transition-all duration-200 outline-none border-2 px-s py-xs rounded-sm leading-[1.7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-1 focus-visible:ring-bb-teal-100 no-underline';
+    try {
+      // Fetch the prototype HTML to extract form config
+      var res = await fetch('/' + formFile);
+      if (!res.ok) throw new Error('Form not found');
+      var html = await res.text();
 
-      return `
-        <div class="flex items-center justify-between py-s border-b border-bb-grey-00 gap-4">
-          <div class="min-w-0">
-            <a href="${p.url}" target="_blank"
-              class="inline-flex outline-none underline-offset-2 underline hover:no-underline active:bg-bb-yellow-100 focus-visible:bg-bb-yellow-100 text-bb-teal-00 hover:text-bb-black-00 hover:bg-bb-teal-10 font-bold text-[1.25rem] leading-normal">
-              ${name}
-            </a>
-            <p class="text-[1rem] text-bb-mid-grey-00">${date} &middot; ${size}</p>
-          </div>
-          <div class="flex gap-2 shrink-0">
-            <a href="${p.url}" target="_blank"
-              class="${btnCls} border-bb-teal-00 text-bb-teal-00 bg-bb-white-00 hover:bg-bb-teal-10">
-              Form
-            </a>
-            <a href="${chatUrl}" target="_blank"
-              class="${btnCls} border-bb-blue-100 text-bb-blue-100 bg-bb-white-00 hover:bg-bb-blue-10">
-              Chat
-            </a>
-          </div>
-        </div>`;
-    }).join('');
+      // Extract form name from <title>
+      var titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      formName = titleMatch ? titleMatch[1].split(/\s*[–—|]\s*/)[0].trim() : 'Form';
 
-    container.innerHTML = '<div class="border-t border-bb-grey-00">' + rows + '</div>';
-  } catch (err) {
-    container.innerHTML = '<p class="text-bb-red-00">Could not load prototypes.</p>';
+      // Extract the last inline <script> block (the form-specific one)
+      var scripts = html.match(/<script(?!\s+src)[^>]*>([\s\S]*?)<\/script>/g);
+      if (scripts && scripts.length > 0) {
+        var lastScript = scripts[scripts.length - 1];
+        formScript = lastScript.replace(/<\/?script[^>]*>/g, '').trim();
+      }
+
+      if (!formScript) throw new Error('Could not extract form script');
+
+      // Update page
+      document.title = formName + ' – Chat';
+      headerEl.innerHTML =
+        '<a href="/' + esc(formFile) + '" class="inline-flex items-center gap-xs outline-none underline-offset-2 underline hover:no-underline active:bg-bb-yellow-100 focus-visible:bg-bb-yellow-100 text-bb-teal-00 hover:text-bb-black-00 hover:bg-bb-teal-10 mb-4">&larr; Back to form</a>' +
+        '<p class="border-bb-blue-40 border-l-4 py-xs pl-s text-bb-mid-grey-00 mb-2">' + esc(formName) + '</p>' +
+        '<h1 class="font-bold text-[2.5rem] leading-[1.15] mb-2">Complete via chat</h1>' +
+        '<p class="text-bb-mid-grey-00 mb-0 text-[1rem]">Answer the questions below to complete your application. You can type naturally.</p>';
+
+      // Start the conversation (no user message — bot initiates)
+      sendMessage(null);
+
+    } catch (err) {
+      headerEl.innerHTML = '<p class="text-bb-red-00">Could not load the form. Please check the URL and try again.</p>';
+      inputArea.classList.add('hidden');
+    }
   }
-}
 
-loadPrototypes();
+  init();
+})();
 </script>
 </body>
 </html>
