@@ -4,14 +4,17 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
+const { extractFormSpec } = require('./lib/pdf');
 const { generateReference } = require('./lib/reference');
 const { sendConfirmation, sendNotification } = require('./lib/email');
 const { generatePrototype } = require('./lib/generate');
 const { chat } = require('./lib/chat');
+const { concierge } = require('./lib/concierge');
+const catalogue = require('./lib/catalogue');
 const cms = require('./lib/cases');
 const whatsapp = require('./lib/whatsapp');
 const s3 = require('./lib/s3');
+const { forwardAnthropicError } = require('./lib/http');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -53,17 +56,18 @@ app.post('/api/generate', upload.single('pdf'), async (req, res) => {
       console.log(`\n━━━ Generate: PDF Upload ━━━━━━━━━━━━━━━━━━━━`);
       console.log(`  File: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)}KB)`);
 
-      const pdfData = await pdfParse(req.file.buffer);
-      formSpec = pdfData.text;
-
-      if (!formSpec || formSpec.trim().length < 20) {
+      try {
+        const result = await extractFormSpec(req.file.buffer, req.file.originalname);
+        formSpec = result.formSpec;
+        console.log(`  Source: ${result.source === 'vision' ? 'Claude vision (scanned PDF)' : 'embedded text'}`);
+      } catch (err) {
+        // The extractor throws with a user-friendly message when neither
+        // path recovers usable content.
         return res.status(400).json({
           success: false,
-          error: 'Could not extract enough text from the PDF. The file may be scanned or image-based. Try using the text description instead.',
+          error: err.message,
         });
       }
-
-      console.log(`  Extracted: ${formSpec.length} characters`);
     } else if (req.body.description) {
       formSpec = req.body.description;
       console.log(`\n━━━ Generate: Text Description ━━━━━━━━━━━━━━`);
@@ -104,6 +108,10 @@ app.post('/api/generate', upload.single('pdf'), async (req, res) => {
       console.log(`  Saved: ${s3Key}`);
     }
 
+    // Invalidate the concierge catalogue so the new prototype is routable
+    // immediately (otherwise citizens would wait up to 5 min for TTL expiry).
+    catalogue.invalidate();
+
     const url = `/${folder}/index.html`;
     console.log(`  ${files.length} files, ${(totalSize / 1024).toFixed(1)}KB total`);
     console.log(`  URL: ${url}`);
@@ -119,26 +127,7 @@ app.post('/api/generate', upload.single('pdf'), async (req, res) => {
 
   } catch (err) {
     console.error('  Generation error:', err.message);
-
-    // Surface Anthropic rate-limit (429) and overloaded (529) errors so the
-    // client can retry with backoff. The SDK already auto-retries twice; by
-    // the time we get here the upstream has been persistently overwhelmed.
-    const status = err.status || err.statusCode;
-    if (status === 429 || status === 529) {
-      // Honour the upstream Retry-After header when present, else default.
-      const upstream = (err.headers && (err.headers['retry-after'] || err.headers['Retry-After']));
-      const retryAfter = upstream || (status === 529 ? '60' : '30');
-      res.set('Retry-After', String(retryAfter));
-      return res.status(429).json({
-        success: false,
-        rateLimited: true,
-        retryAfter: Number(retryAfter) || 30,
-        error: status === 529
-          ? 'Anthropic is currently overloaded. Please retry in a moment.'
-          : 'Anthropic rate limit reached. Please retry shortly.',
-      });
-    }
-
+    if (forwardAnthropicError(err, res)) return;
     return res.status(500).json({
       success: false,
       error: err.message || 'An unexpected error occurred during generation.',
@@ -407,10 +396,74 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// ── POST /api/concierge ─────────────────────────────────────
+// Front-door chat: match free-text citizen intents to digitised services.
+app.post('/api/concierge', async (req, res) => {
+  const { conversationId, message } = req.body || {};
+
+  try {
+    const result = await concierge({ conversationId, message });
+
+    // Log routing outcome for visibility — "no match" rate informs what to
+    // digitise next; most-requested intents inform catalogue curation.
+    const userMsg = typeof message === 'string' ? message.trim() : '';
+    if (userMsg) {
+      if (result.recommendations.length > 0) {
+        const names = result.recommendations.map(r => r.formName).join(', ');
+        console.log(`  Concierge: "${userMsg}" → ${names}`);
+      } else if (result.noMatch) {
+        console.log(`  Concierge: "${userMsg}" → no match`);
+      } else {
+        console.log(`  Concierge: "${userMsg}" → clarifying question`);
+      }
+    }
+
+    return res.json({
+      success: true,
+      conversationId: result.conversationId,
+      reply: result.reply,
+      recommendations: result.recommendations,
+      noMatch: result.noMatch,
+    });
+  } catch (err) {
+    console.error('  Concierge error:', err.message);
+    if (forwardAnthropicError(err, res)) return;
+    return res.status(500).json({
+      success: false,
+      error: 'Something went wrong. Please try again.',
+    });
+  }
+});
+
 // ── WhatsApp webhook ───────────────────────────────────────
 app.get('/api/whatsapp/webhook', whatsapp.verifyWebhook);
 app.post('/api/whatsapp/webhook', whatsapp.handleWebhook);
 app.post('/api/whatsapp/simulator', whatsapp.handleSimulator);
+
+// ── GET /go/whatsapp ───────────────────────────────────────
+// Single redirect that "Continue via WhatsApp" buttons point to. In LIVE
+// mode with a resolved display number, sends the citizen to the real
+// WhatsApp app via wa.me/ with a prefilled starter message. Otherwise
+// falls back to the in-browser simulator.
+app.get('/go/whatsapp', async (req, res) => {
+  const formFile = (req.query.form || '').toString();
+  if (!formFile) return res.status(400).send('Missing ?form parameter');
+
+  // Best-effort: look up the form name from the catalogue for a nicer
+  // prefill message. If the catalogue doesn't know about it (e.g. the
+  // user is previewing a local-only prototype), we still redirect with
+  // a generic label.
+  let formName = null;
+  try {
+    const records = await catalogue.getCatalogue();
+    const folder = formFile.split('/')[0].replace(/\.html$/i, '');
+    const rec = records.find(r => r.folder === folder);
+    if (rec) formName = rec.formName;
+  } catch (_) { /* non-fatal */ }
+
+  const target = await whatsapp.getStartLink(formFile, formName);
+  return res.redirect(302, target);
+});
 
 // ── CMS: Authentication ────────────────────────────────────
 
