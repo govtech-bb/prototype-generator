@@ -130,7 +130,7 @@ body {
   <div class="container py-l max-w-3xl">
 
     <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-2">Form Prototype Generator</h1>
-    <p class="text-bb-mid-grey-00 mb-8">Upload a PDF form specification or describe the form you need, and we'll generate a clickable prototype.</p>
+    <p class="text-bb-mid-grey-00 mb-8">Upload one or more PDF form specifications, or describe a form you need, and we'll generate a clickable prototype for each one.</p>
 
     <!-- Input method toggle -->
     <div class="flex gap-0 mb-8 border-b-2 border-bb-grey-00">
@@ -151,17 +151,14 @@ body {
         onclick="document.getElementById('file-input').click()">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#99a8cc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <p class="text-bb-mid-grey-00 text-center">
-          <span class="text-bb-teal-00 font-bold underline">Click to upload</span> or drag and drop a PDF file
+          <span class="text-bb-teal-00 font-bold underline">Click to upload</span> or drag and drop PDF files
         </p>
-        <p class="text-[1rem] text-bb-mid-grey-00">PDF up to 10MB</p>
-        <input type="file" id="file-input" accept=".pdf" class="hidden" onchange="handleFileSelect(this)">
+        <p class="text-[1rem] text-bb-mid-grey-00">Select one or more PDFs, up to 10MB each</p>
+        <input type="file" id="file-input" accept=".pdf" multiple class="hidden" onchange="handleFileSelect(this)">
       </div>
-      <div id="file-info" class="hidden mt-4 p-s bg-bb-teal-10 rounded-sm flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0e5f64" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <span id="file-name" class="text-bb-teal-00 font-bold"></span>
-        </div>
-        <button onclick="clearFile()" class="text-bb-mid-grey-00 hover:text-bb-red-00 text-[1rem] underline">Remove</button>
+      <ul id="file-list" class="hidden mt-4 space-y-2"></ul>
+      <div id="file-actions" class="hidden mt-2 flex justify-end">
+        <button onclick="clearAllFiles()" class="text-bb-mid-grey-00 hover:text-bb-red-00 text-[1rem] underline">Remove all</button>
       </div>
     </div>
 
@@ -190,37 +187,19 @@ body {
       </button>
     </div>
 
-    <!-- Loading state -->
-    <div id="loading" class="hidden mt-8 p-s bg-bb-yellow-10 border-l-4 border-bb-yellow-100 rounded-sm">
-      <div class="flex items-center gap-4">
-        <div class="spinner"></div>
-        <div>
-          <p class="font-bold" id="loading-title">Generating your prototype...</p>
-          <p class="text-[1rem] text-bb-mid-grey-00 pulse" id="loading-status">Sending form specification to Claude API</p>
-        </div>
+    <!-- Batch progress (multi-file) -->
+    <div id="batch" class="hidden mt-8 space-y-2">
+      <div class="flex items-center justify-between">
+        <p class="font-bold" id="batch-title">Generating prototypes…</p>
+        <p class="text-[1rem] text-bb-mid-grey-00" id="batch-summary"></p>
       </div>
+      <ul id="batch-list" class="space-y-2"></ul>
     </div>
 
-    <!-- Error state -->
+    <!-- Error state (for input validation, not per-file errors) -->
     <div id="error" class="hidden mt-8 border-l-4 border-bb-red-00 bg-bb-red-10 p-s rounded-sm">
       <p class="font-bold text-bb-red-00">Something went wrong</p>
       <p class="text-bb-red-00 text-[1rem]" id="error-message"></p>
-    </div>
-
-    <!-- Result -->
-    <div id="result" class="hidden mt-8 bg-bb-green-10 border-l-4 border-bb-green-00 p-s rounded-sm space-y-4">
-      <p class="font-bold text-bb-green-00">Prototype generated successfully</p>
-      <p><span class="font-bold">Form:</span> <span id="result-name"></span></p>
-      <div class="flex gap-4 flex-wrap">
-        <a id="result-link" href="#" target="_blank"
-          class="relative inline-flex items-center justify-center gap-2 text-[20px] whitespace-nowrap transition-[background-color,box-shadow] duration-200 outline-none bg-bb-teal-00 text-bb-white-00 hover:bg-[#1a777d] hover:shadow-[inset_0_0_0_4px_rgba(222,245,246,0.10)] active:bg-[#0a4549] active:shadow-[inset_0_0_0_3px_rgba(0,0,0,0.20)] px-xm py-s rounded-sm leading-[1.7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-1 focus-visible:ring-bb-teal-100 focus-visible:rounded-sm no-underline">
-          Open prototype
-        </a>
-        <button onclick="copyLink()" id="copy-btn"
-          class="relative inline-flex items-center justify-center gap-2 text-[20px] whitespace-nowrap transition-all duration-200 outline-none border-2 border-bb-teal-00 text-bb-teal-00 bg-bb-white-00 hover:bg-bb-teal-10 px-xm py-s rounded-sm leading-[1.7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-1 focus-visible:ring-bb-teal-100 focus-visible:rounded-sm">
-          Copy link
-        </button>
-      </div>
     </div>
 
     <!-- Link to prototypes page -->
@@ -251,7 +230,9 @@ body {
 <script>
 /* ── State ── */
 let activeTab = 'upload';
-let selectedFile = null;
+let selectedFiles = [];   // array of { id, file }
+let fileIdCounter = 0;
+const MAX_CONCURRENCY = 3;
 
 /* ── Tabs ── */
 function switchTab(tab) {
@@ -277,28 +258,81 @@ function switchTab(tab) {
 
 /* ── File handling ── */
 function handleFileSelect(input) {
-  const file = input.files[0];
-  if (!file) return;
-  if (file.type !== 'application/pdf') {
-    showError('Please select a PDF file.');
-    return;
-  }
-  if (file.size > 10 * 1024 * 1024) {
-    showError('File must be under 10MB.');
-    return;
-  }
-  selectedFile = file;
-  document.getElementById('file-name').textContent = file.name;
-  document.getElementById('file-info').classList.remove('hidden');
-  document.getElementById('drop-zone').classList.add('hidden');
-  hideError();
+  addFiles(Array.from(input.files || []));
+  // Reset input so the same file can be re-added after removal
+  input.value = '';
 }
 
-function clearFile() {
-  selectedFile = null;
+function addFiles(files) {
+  hideError();
+  for (const file of files) {
+    if (file.type !== 'application/pdf') {
+      showError(`"${file.name}" is not a PDF. Skipped.`);
+      continue;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showError(`"${file.name}" is over 10MB. Skipped.`);
+      continue;
+    }
+    // De-dupe by name + size
+    if (selectedFiles.some(f => f.file.name === file.name && f.file.size === file.size)) continue;
+    selectedFiles.push({ id: ++fileIdCounter, file });
+  }
+  renderFileList();
+}
+
+function removeFile(id) {
+  selectedFiles = selectedFiles.filter(f => f.id !== id);
+  renderFileList();
+}
+
+function clearAllFiles() {
+  selectedFiles = [];
   document.getElementById('file-input').value = '';
-  document.getElementById('file-info').classList.add('hidden');
-  document.getElementById('drop-zone').classList.remove('hidden');
+  renderFileList();
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function renderFileList() {
+  const list = document.getElementById('file-list');
+  const actions = document.getElementById('file-actions');
+  const dropZone = document.getElementById('drop-zone');
+
+  list.innerHTML = '';
+  if (selectedFiles.length === 0) {
+    list.classList.add('hidden');
+    actions.classList.add('hidden');
+    dropZone.classList.remove('hidden');
+    return;
+  }
+
+  list.classList.remove('hidden');
+  actions.classList.remove('hidden');
+  dropZone.classList.remove('hidden');   // keep drop zone visible so users can add more
+
+  for (const { id, file } of selectedFiles) {
+    const li = document.createElement('li');
+    li.className = 'p-s bg-bb-teal-10 rounded-sm flex items-center justify-between';
+    li.innerHTML = `
+      <div class="flex items-center gap-2 min-w-0">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0e5f64" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span class="text-bb-teal-00 font-bold truncate">${escapeHtml(file.name)}</span>
+        <span class="text-bb-mid-grey-00 text-[1rem] shrink-0">${formatSize(file.size)}</span>
+      </div>
+      <button class="text-bb-mid-grey-00 hover:text-bb-red-00 text-[1rem] underline shrink-0 ml-4">Remove</button>
+    `;
+    li.querySelector('button').addEventListener('click', () => removeFile(id));
+    list.appendChild(li);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 /* ── Drag and drop ── */
@@ -308,103 +342,219 @@ dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-ove
 dropZone.addEventListener('drop', e => {
   e.preventDefault();
   dropZone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) {
-    const input = document.getElementById('file-input');
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    input.files = dt.files;
-    handleFileSelect(input);
-  }
+  addFiles(Array.from(e.dataTransfer.files || []));
 });
-
-/* ── Status messages ── */
-const STATUS_MESSAGES = [
-  'Sending form specification to Claude API',
-  'Analysing form structure and fields',
-  'Generating page layouts and navigation',
-  'Building validation logic',
-  'Creating Check Your Answers page',
-  'Applying GovTech Barbados design system',
-  'Finalising prototype...',
-];
 
 /* ── Generate ── */
 async function generate() {
   hideError();
-  document.getElementById('result').classList.add('hidden');
 
-  // Validate input
-  if (activeTab === 'upload' && !selectedFile) {
-    showError('Please upload a PDF file first.');
-    return;
-  }
-  if (activeTab === 'text') {
+  // Build the list of "jobs" to run
+  let jobs = [];
+  if (activeTab === 'upload') {
+    if (selectedFiles.length === 0) {
+      showError('Please upload at least one PDF file.');
+      return;
+    }
+    jobs = selectedFiles.map(({ file }) => ({
+      label: file.name,
+      buildBody: () => {
+        const fd = new FormData();
+        fd.append('pdf', file);
+        return fd;
+      },
+    }));
+  } else {
     const desc = document.getElementById('description').value.trim();
     if (!desc) {
       showError('Please enter a form description.');
       return;
     }
+    jobs = [{
+      label: desc.length > 60 ? desc.slice(0, 60) + '…' : desc,
+      buildBody: () => {
+        const fd = new FormData();
+        fd.append('description', desc);
+        return fd;
+      },
+    }];
   }
 
-  // Show loading
   const btn = document.getElementById('generate-btn');
   btn.disabled = true;
-  document.getElementById('loading').classList.remove('hidden');
 
-  // Cycle through status messages
-  let msgIdx = 0;
-  const statusEl = document.getElementById('loading-status');
-  const statusInterval = setInterval(() => {
-    msgIdx++;
-    if (msgIdx < STATUS_MESSAGES.length) {
-      statusEl.textContent = STATUS_MESSAGES[msgIdx];
+  // Render batch panel with a row per job
+  const batch = document.getElementById('batch');
+  const batchList = document.getElementById('batch-list');
+  const batchTitle = document.getElementById('batch-title');
+  const batchSummary = document.getElementById('batch-summary');
+  batch.classList.remove('hidden');
+  batchList.innerHTML = '';
+  batchTitle.textContent = jobs.length === 1 ? 'Generating prototype…' : `Generating ${jobs.length} prototypes…`;
+
+  const rows = jobs.map((job, i) => {
+    const li = document.createElement('li');
+    li.className = 'p-s bg-bb-white-00 border-2 border-bb-grey-00 rounded-sm';
+    li.innerHTML = `
+      <div class="flex items-center gap-4">
+        <div data-icon class="shrink-0 w-6 h-6 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#595959" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p data-label class="font-bold truncate">${escapeHtml(job.label)}</p>
+          <p data-status class="text-[1rem] text-bb-mid-grey-00">Queued</p>
+        </div>
+        <div data-action class="shrink-0"></div>
+      </div>
+    `;
+    batchList.appendChild(li);
+    return li;
+  });
+
+  const summary = { done: 0, failed: 0, total: jobs.length };
+  const updateSummary = () => {
+    const parts = [];
+    if (summary.done) parts.push(`${summary.done} done`);
+    if (summary.failed) parts.push(`${summary.failed} failed`);
+    const remaining = summary.total - summary.done - summary.failed;
+    if (remaining) parts.push(`${remaining} remaining`);
+    batchSummary.textContent = parts.join(' · ');
+  };
+  updateSummary();
+
+  // Run with concurrency cap
+  const limit = Math.min(MAX_CONCURRENCY, jobs.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < jobs.length) {
+      const idx = cursor++;
+      const job = jobs[idx];
+      const row = rows[idx];
+      setRowState(row, 'running', 'Generating…');
+
+      const MAX_ATTEMPTS = 4; // 1 initial + 3 retries on 429
+      let attempt = 0;
+      let finalError = null;
+      let succeeded = false;
+
+      while (attempt < MAX_ATTEMPTS && !succeeded) {
+        attempt++;
+        try {
+          const res = await fetch('/api/generate', { method: 'POST', body: job.buildBody() });
+
+          if (res.status === 429) {
+            const data = await res.json().catch(() => ({}));
+            if (attempt >= MAX_ATTEMPTS) {
+              finalError = new Error(data.error || 'Anthropic is still rate-limited. Please try again later.');
+              break;
+            }
+            // Prefer Retry-After header, then body retryAfter, else exponential backoff (10s, 20s, 40s capped at 60s).
+            const headerSec = parseRetryAfter(res.headers.get('Retry-After'));
+            const bodySec = Number(data.retryAfter) || 0;
+            const backoffSec = Math.min(60, 10 * Math.pow(2, attempt - 1));
+            const waitSec = Math.max(headerSec || bodySec || backoffSec, 5);
+            await waitWithCountdown(row, waitSec, attempt, MAX_ATTEMPTS);
+            continue; // retry
+          }
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || `Generation failed (HTTP ${res.status})`);
+          }
+          setRowState(row, 'success', `Prototype: ${data.formName}`, { url: data.url });
+          summary.done++;
+          succeeded = true;
+        } catch (err) {
+          // Hard error — don't retry (timeouts, network errors, 500s, etc.)
+          finalError = err;
+          break;
+        }
+      }
+
+      if (!succeeded) {
+        setRowState(row, 'error', (finalError && finalError.message) || 'Generation failed');
+        summary.failed++;
+      }
+      updateSummary();
     }
-  }, 8000);
-
-  try {
-    // Build form data
-    const formData = new FormData();
-    if (activeTab === 'upload') {
-      formData.append('pdf', selectedFile);
-    } else {
-      formData.append('description', document.getElementById('description').value.trim());
-    }
-
-    const res = await fetch('/api/generate', {
-      method: 'POST',
-      body: formData,
-    });
-
-    const data = await res.json();
-
-    if (!res.ok || !data.success) {
-      throw new Error(data.error || 'Generation failed');
-    }
-
-    // Show result
-    document.getElementById('result-name').textContent = data.formName;
-    const link = document.getElementById('result-link');
-    link.href = data.url;
-    document.getElementById('result').classList.remove('hidden');
-
-  } catch (err) {
-    showError(err.message || 'An unexpected error occurred. Please try again.');
-  } finally {
-    clearInterval(statusInterval);
-    btn.disabled = false;
-    document.getElementById('loading').classList.add('hidden');
   }
+
+  function parseRetryAfter(value) {
+    if (!value) return 0;
+    const n = Number(value);
+    if (Number.isFinite(n)) return Math.max(0, Math.floor(n));
+    const date = Date.parse(value); // HTTP-date format
+    if (Number.isFinite(date)) return Math.max(0, Math.ceil((date - Date.now()) / 1000));
+    return 0;
+  }
+
+  async function waitWithCountdown(row, seconds, attempt, max) {
+    const retriesLeft = max - attempt;
+    setRowState(row, 'waiting', `Rate limited — retrying in ${seconds}s (${retriesLeft} ${retriesLeft === 1 ? 'retry' : 'retries'} left)`);
+    const statusEl = row.querySelector('[data-status]');
+    let remaining = seconds;
+    while (remaining > 0) {
+      await new Promise(r => setTimeout(r, 1000));
+      remaining -= 1;
+      if (statusEl) {
+        statusEl.textContent = `Rate limited — retrying in ${Math.max(0, Math.ceil(remaining))}s (${retriesLeft} ${retriesLeft === 1 ? 'retry' : 'retries'} left)`;
+      }
+    }
+    setRowState(row, 'running', 'Retrying…');
+  }
+
+  const workers = Array.from({ length: limit }, () => worker());
+  await Promise.all(workers);
+
+  // Final state
+  if (summary.failed === 0) {
+    batchTitle.textContent = jobs.length === 1 ? 'Prototype generated' : `All ${jobs.length} prototypes generated`;
+  } else if (summary.done === 0) {
+    batchTitle.textContent = jobs.length === 1 ? 'Generation failed' : 'All generations failed';
+  } else {
+    batchTitle.textContent = `${summary.done} of ${summary.total} prototypes generated`;
+  }
+  btn.disabled = false;
 }
 
-/* ── Copy link ── */
-function copyLink() {
-  const url = document.getElementById('result-link').href;
-  navigator.clipboard.writeText(url).then(() => {
-    const btn = document.getElementById('copy-btn');
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = 'Copy link'; }, 2000);
-  });
+function setRowState(row, state, statusText, opts) {
+  opts = opts || {};
+  const iconEl = row.querySelector('[data-icon]');
+  const statusEl = row.querySelector('[data-status]');
+  const actionEl = row.querySelector('[data-action]');
+
+  statusEl.textContent = statusText;
+
+  // Reset classes
+  row.className = 'p-s bg-bb-white-00 border-2 rounded-sm';
+
+  if (state === 'running') {
+    row.classList.add('border-bb-yellow-100', 'bg-bb-yellow-10');
+    iconEl.innerHTML = '<div class="spinner"></div>';
+    statusEl.className = 'text-[1rem] text-bb-mid-grey-00 pulse';
+    actionEl.innerHTML = '';
+  } else if (state === 'waiting') {
+    row.classList.add('border-bb-yellow-100', 'bg-bb-yellow-10');
+    iconEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8a833" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+    statusEl.className = 'text-[1rem] text-bb-mid-grey-00';
+    actionEl.innerHTML = '';
+  } else if (state === 'success') {
+    row.classList.add('border-bb-green-00', 'bg-bb-green-10');
+    iconEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00654a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    statusEl.className = 'text-[1rem] text-bb-green-00';
+    actionEl.innerHTML = `
+      <a href="${escapeHtml(opts.url)}" target="_blank"
+        class="inline-flex items-center justify-center gap-2 text-[1rem] whitespace-nowrap outline-none bg-bb-teal-00 text-bb-white-00 hover:bg-[#1a777d] px-s py-xs rounded-sm no-underline font-bold">
+        Open
+      </a>
+    `;
+  } else if (state === 'error') {
+    row.classList.add('border-bb-red-00', 'bg-bb-red-10');
+    iconEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a42c2c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    statusEl.className = 'text-[1rem] text-bb-red-00';
+    actionEl.innerHTML = '';
+  }
 }
 
 /* ── Error helpers ── */

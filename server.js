@@ -41,9 +41,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ── POST /api/generate ──────────────────────────────────────
 app.post('/api/generate', upload.single('pdf'), async (req, res) => {
-  // Long timeout for Claude API calls (up to 15 minutes)
-  req.setTimeout(15 * 60 * 1000);
-  res.setTimeout(15 * 60 * 1000);
+  // Long timeout for Claude API calls (up to 20 minutes)
+  req.setTimeout(20 * 60 * 1000);
+  res.setTimeout(20 * 60 * 1000);
 
   try {
     let formSpec = '';
@@ -77,30 +77,35 @@ app.post('/api/generate', upload.single('pdf'), async (req, res) => {
 
     // Call Claude API to generate the prototype
     console.log('  Generating prototype with Claude API...');
-    const { html, formName } = await generatePrototype(formSpec);
+    const { files, formName } = await generatePrototype(formSpec);
 
-    if (!html || html.length < 100) {
+    if (!files || files.length === 0) {
       return res.status(500).json({
         success: false,
         error: 'The generated output was too short. Please try again with more detail.',
       });
     }
 
-    // Generate filename slug
+    // Generate folder slug
     const slug = formName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
       .substring(0, 60);
     const timestamp = Date.now().toString(36);
-    const filename = `${slug}-${timestamp}.html`;
+    const folder = `${slug}-${timestamp}`;
 
-    // Save to S3
-    const s3Key = `prototypes/${filename}`;
-    await s3.putObject(s3Key, html, 'text/html');
+    // Save all files to S3 under the folder
+    let totalSize = 0;
+    for (const file of files) {
+      const s3Key = `prototypes/${folder}/${file.filename}`;
+      await s3.putObject(s3Key, file.html, 'text/html');
+      totalSize += file.html.length;
+      console.log(`  Saved: ${s3Key}`);
+    }
 
-    const url = `/${filename}`;
-    console.log(`  Saved to S3: ${s3Key} (${(html.length / 1024).toFixed(1)}KB)`);
+    const url = `/${folder}/index.html`;
+    console.log(`  ${files.length} files, ${(totalSize / 1024).toFixed(1)}KB total`);
     console.log(`  URL: ${url}`);
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
@@ -108,11 +113,32 @@ app.post('/api/generate', upload.single('pdf'), async (req, res) => {
       success: true,
       url,
       formName,
-      filename,
+      folder,
+      files: files.map(f => f.filename),
     });
 
   } catch (err) {
     console.error('  Generation error:', err.message);
+
+    // Surface Anthropic rate-limit (429) and overloaded (529) errors so the
+    // client can retry with backoff. The SDK already auto-retries twice; by
+    // the time we get here the upstream has been persistently overwhelmed.
+    const status = err.status || err.statusCode;
+    if (status === 429 || status === 529) {
+      // Honour the upstream Retry-After header when present, else default.
+      const upstream = (err.headers && (err.headers['retry-after'] || err.headers['Retry-After']));
+      const retryAfter = upstream || (status === 529 ? '60' : '30');
+      res.set('Retry-After', String(retryAfter));
+      return res.status(429).json({
+        success: false,
+        rateLimited: true,
+        retryAfter: Number(retryAfter) || 30,
+        error: status === 529
+          ? 'Anthropic is currently overloaded. Please retry in a moment.'
+          : 'Anthropic rate limit reached. Please retry shortly.',
+      });
+    }
+
     return res.status(500).json({
       success: false,
       error: err.message || 'An unexpected error occurred during generation.',
@@ -125,12 +151,60 @@ app.get('/api/prototypes', async (req, res) => {
   try {
     const objects = await s3.listObjects('prototypes/');
 
-    const files = [];
-    for (const obj of objects) {
-      const filename = obj.key.replace('prototypes/', '');
-      if (!filename || !filename.endsWith('.html')) continue;
+    // Group objects by folder (multi-page) or detect flat files (legacy)
+    const folders = new Map();  // folder -> { indexKey, totalSize, created, files[] }
+    const flatFiles = [];       // legacy single-file prototypes
 
-      // Extract title from the first 2000 bytes of the HTML
+    for (const obj of objects) {
+      const relPath = obj.key.replace('prototypes/', '');
+      if (!relPath || !relPath.endsWith('.html')) continue;
+
+      const parts = relPath.split('/');
+      if (parts.length === 2) {
+        // Folder-based: prototypes/{folder}/{page}.html
+        const folder = parts[0];
+        const page = parts[1];
+        if (!folders.has(folder)) {
+          folders.set(folder, { indexKey: null, totalSize: 0, created: obj.lastModified, files: [] });
+        }
+        const entry = folders.get(folder);
+        entry.totalSize += obj.size;
+        entry.files.push(page);
+        if (page === 'index.html') entry.indexKey = obj.key;
+        // Use earliest file date as created
+        if (obj.lastModified < entry.created) entry.created = obj.lastModified;
+      } else if (parts.length === 1) {
+        // Legacy flat file: prototypes/{filename}.html
+        flatFiles.push(obj);
+      }
+    }
+
+    const prototypes = [];
+
+    // Process folder-based prototypes
+    for (const [folder, entry] of folders) {
+      let title = null;
+      const titleKey = entry.indexKey || `prototypes/${folder}/${entry.files[0]}`;
+      try {
+        const head = await s3.getObjectRange(titleKey, 0, 1999);
+        const m = head.match(/<title[^>]*>([^<]+)<\/title>/i);
+        if (m) title = m[1].split(/\s*[–—|]\s*/)[0].trim();
+      } catch (_) {}
+
+      prototypes.push({
+        filename: `${folder}/index.html`,
+        url: `/${folder}/index.html`,
+        title,
+        size: entry.totalSize,
+        created: entry.created,
+        folder,
+        pages: entry.files,
+      });
+    }
+
+    // Process legacy flat files
+    for (const obj of flatFiles) {
+      const filename = obj.key.replace('prototypes/', '');
       let title = null;
       try {
         const head = await s3.getObjectRange(obj.key, 0, 1999);
@@ -138,7 +212,7 @@ app.get('/api/prototypes', async (req, res) => {
         if (m) title = m[1].split(/\s*[–—|]\s*/)[0].trim();
       } catch (_) {}
 
-      files.push({
+      prototypes.push({
         filename,
         url: `/${filename}`,
         title,
@@ -148,9 +222,9 @@ app.get('/api/prototypes', async (req, res) => {
     }
 
     // Sort newest first
-    files.sort((a, b) => new Date(b.created) - new Date(a.created));
+    prototypes.sort((a, b) => new Date(b.created) - new Date(a.created));
 
-    return res.json({ prototypes: files });
+    return res.json({ prototypes });
   } catch (err) {
     console.error('  List prototypes error:', err.message);
     return res.status(500).json({ prototypes: [], error: err.message });
@@ -224,7 +298,27 @@ app.get('/assets/:filename', async (req, res) => {
   }
 });
 
-// ── S3 proxy: serve prototypes ──────────────────────────────
+// ── S3 proxy: serve prototypes (folder-based: /{folder}/{page}.html) ──
+app.get(/^\/([a-z0-9][a-z0-9\-]*)\/([a-z0-9][a-z0-9\-]*\.html)$/i, async (req, res) => {
+  const folder = req.params[0];
+  const page = req.params[1];
+  const s3Key = `prototypes/${folder}/${page}`;
+
+  try {
+    const obj = await s3.getObject(s3Key);
+    res.set('Content-Type', 'text/html');
+    if (obj.contentLength) res.set('Content-Length', String(obj.contentLength));
+    obj.body.pipe(res);
+  } catch (err) {
+    if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
+      return res.status(404).send('Not found');
+    }
+    console.error(`  S3 prototype error (${s3Key}):`, err.message);
+    return res.status(500).send('Internal server error');
+  }
+});
+
+// ── S3 proxy: serve prototypes (legacy flat: /{filename}.html) ──
 app.get(/^\/([a-z0-9][a-z0-9\-]*\.html)$/i, async (req, res) => {
   const filename = req.params[0];
   const s3Key = `prototypes/${filename}`;

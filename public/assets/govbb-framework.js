@@ -24,10 +24,25 @@
      State
      ═══════════════════════════════════════════════ */
 
-  const D = {};          // Form data store
+  // D is a sessionStorage-backed data store so form data persists across page loads.
+  // Reads/writes sessionStorage under the key 'govbb_form_data'.
+  var _storageKey = 'govbb_form_data';
+  function _loadData() {
+    try { return JSON.parse(sessionStorage.getItem(_storageKey)) || {}; } catch (e) { return {}; }
+  }
+  function _saveData(d) {
+    try { sessionStorage.setItem(_storageKey, JSON.stringify(d)); } catch (e) {}
+  }
+  var _dataCache = _loadData();
+  var D = new Proxy(_dataCache, {
+    set: function (obj, prop, val) { obj[prop] = val; _saveData(obj); return true; },
+    deleteProperty: function (obj, prop) { delete obj[prop]; _saveData(obj); return true; },
+  });
+
   let cur = 0;           // Current page index
   let _config = null;    // Config set by init()
   let _appEl = null;     // The <main id="app"> element
+  let _multiPage = false; // Multi-page mode (separate HTML files per page)
 
   /* ═══════════════════════════════════════════════
      CSS class constants
@@ -1048,7 +1063,18 @@
     window.scrollTo(0, 0);
   }
 
+  /** Resolve a page ID to a URL in multi-page mode */
+  function _pageUrl(pageId) {
+    if (!_multiPage || !_config || !_config.pageFiles) return '#' + pageId;
+    return _config.pageFiles[pageId] || (pageId + '.html');
+  }
+
   function nav(pageId) {
+    if (_multiPage) {
+      _collectInputs();
+      window.location.href = _pageUrl(pageId);
+      return;
+    }
     var flow = _getFlow();
     var idx = flow.indexOf(pageId);
     if (idx !== -1) {
@@ -1059,6 +1085,14 @@
   }
 
   function back() {
+    if (_multiPage) {
+      _collectInputs();
+      var flow = _getFlow();
+      if (cur > 0) {
+        window.location.href = _pageUrl(flow[cur - 1]);
+      }
+      return;
+    }
     if (cur > 0) {
       cur--;
       var flow = _getFlow();
@@ -1067,14 +1101,19 @@
     }
   }
 
+  /** Collect all current input values into D */
+  function _collectInputs() {
+    document.querySelectorAll('input, select, textarea').forEach(function (el) {
+      if (el.id && el.type !== 'button') D[el.id] = el.value;
+    });
+  }
+
   function next() {
     var flow = _getFlow();
     var pageId = flow[cur];
 
     // Collect current input values into D
-    document.querySelectorAll('input, select, textarea').forEach(function (el) {
-      if (el.id && el.type !== 'button') D[el.id] = el.value;
-    });
+    _collectInputs();
 
     // Validate (skip start, check, confirmation)
     if (pageId !== 'start' && pageId !== 'check' && pageId !== 'confirmation' && pageId !== 'payment-confirm') {
@@ -1089,18 +1128,26 @@
     // If about to advance to confirmation, submit to server first
     if (flow[cur + 1] === 'confirmation') {
       submitApplication().then(function () {
-        cur++;
-        _pushState(flow[cur]);
-        render();
+        if (_multiPage) {
+          window.location.href = _pageUrl('confirmation');
+        } else {
+          cur++;
+          _pushState(flow[cur]);
+          render();
+        }
       });
       return;
     }
 
     // Advance
     if (cur < flow.length - 1) {
-      cur++;
-      _pushState(flow[cur]);
-      render();
+      if (_multiPage) {
+        window.location.href = _pageUrl(flow[cur + 1]);
+      } else {
+        cur++;
+        _pushState(flow[cur]);
+        render();
+      }
     }
   }
 
@@ -1116,7 +1163,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             formName: _config.formName,
-            formData: Object.assign({}, D),
+            formData: Object.assign({}, _dataCache),
             userEmail: D['contact-email'] || D['email'] || null,
           }),
         });
@@ -1147,28 +1194,46 @@
   function init(config) {
     _config = config;
     _appEl = document.getElementById(config.appElementId || 'app');
+    _multiPage = !!config.multiPage;
 
-    // Restore page from URL hash (e.g. #owner-name)
-    var hash = window.location.hash.replace('#', '');
     var flow = _getFlow();
-    var idx = hash ? flow.indexOf(hash) : -1;
-    cur = idx !== -1 ? idx : 0;
 
-    // Set initial state
-    _replaceState(flow[cur]);
-    render();
+    if (_multiPage) {
+      // Multi-page mode: each page is its own HTML file.
+      // Determine current page from config.currentPage (set per-file).
+      var currentPage = config.currentPage || flow[0];
+      cur = flow.indexOf(currentPage);
+      if (cur === -1) cur = 0;
 
-    // Handle browser back/forward buttons
-    window.addEventListener('popstate', function (e) {
-      if (e.state && e.state.page) {
-        var flow = _getFlow();
-        var idx = flow.indexOf(e.state.page);
-        if (idx !== -1) {
-          cur = idx;
-          render();
-        }
+      // If this page has a render function, render it
+      if (config.pages && config.pages[currentPage]) {
+        _appEl.innerHTML = config.pages[currentPage]();
       }
-    });
+
+      // Clear form data on start page
+      if (currentPage === 'start') {
+        Object.keys(_dataCache).forEach(function (k) { delete D[k]; });
+      }
+    } else {
+      // Single-page mode (legacy): all pages in one HTML file.
+      var hash = window.location.hash.replace('#', '');
+      var idx = hash ? flow.indexOf(hash) : -1;
+      cur = idx !== -1 ? idx : 0;
+
+      _replaceState(flow[cur]);
+      render();
+
+      window.addEventListener('popstate', function (e) {
+        if (e.state && e.state.page) {
+          var flow = _getFlow();
+          var idx = flow.indexOf(e.state.page);
+          if (idx !== -1) {
+            cur = idx;
+            render();
+          }
+        }
+      });
+    }
   }
 
   /* ═══════════════════════════════════════════════
