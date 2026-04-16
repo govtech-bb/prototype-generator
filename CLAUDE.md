@@ -355,6 +355,11 @@ Follow the GOV.UK Service Manual guidance on structuring forms (<https://www.gov
 
 5. **Labels as page headings.** When a page asks a single question, make the `<label>` or `<legend>` the `<h1>` of the page. This avoids repetition and helps screen reader users.
 
+6. **Always capture an email address.** Every prototype MUST collect the applicant's email address, even if the source specification does not list email as a required field. This is so we can send an automatic confirmation of receipt after submission. Use the field ID `contact-email` so the server-side submission pipeline (`/api/submit`, `lib/chat.js`, WhatsApp) picks it up automatically.
+    - If the spec already has a Contact Block that includes email, use that page — do not add a second one.
+    - Otherwise, add a dedicated email page (page ID `email`, filename `email.html`) **immediately before the `check` page** so the email appears in the Check Your Answers summary.
+    - Email is always Required. Validate it in `validate()`: present, and matches a simple pattern like `/^\S+@\S+\.\S+$/`.
+
 ---
 
 ## Page types to include
@@ -379,7 +384,8 @@ Map specification sections to question pages as follows:
 |---|---|
 | **Name Block** | One page asking for the user's full name. Use `GovBB.textField` for first name, middle name (optional), and last name. Field IDs: `first-name`, `middle-name`, `last-name`. |
 | **Personal Details Block** | Separate pages for each detail following one-thing-per-page. Typical pages: (1) Date of birth with `GovBB.dateField('dob', ...)`; (2) Gender with `GovBB.radioGroup`; (3) National Registration Number with `GovBB.textField` (hint: "You can find this on your national ID card. For example, 870315-1234"); (4) National Insurance Number if needed. |
-| **Contact Block** | One page for contact details: email with `GovBB.emailField('contact-email', ...)` and mobile/phone with `GovBB.telField('mobile', ...)`. |
+| **Contact Block** | One page for contact details: email with `GovBB.emailField('contact-email', ...)` and mobile/phone with `GovBB.telField('mobile', ...)`. This page also satisfies the mandatory email-capture rule — do not duplicate it. |
+| **Email (mandatory)** | If the form has no Contact Block, still add a dedicated email page (page ID `email`, filename `email.html`) directly before `check`. H1: "What is your email address?". Hint: "We will send you a confirmation after you submit." Use `GovBB.emailField('contact-email', 'Email address', { hint: 'We will send you a confirmation after you submit.' })`. |
 | **Address Block** | One page for address: street address with `GovBB.textField('street-address', ...)`, parish with `GovBB.selectField('parish', ..., GovBB.PARISHES)`, and postal code with `GovBB.textField('postal-code', ...)`. |
 | **Vehicle-related fields** | Separate pages for vehicle details: (1) Licence plate with `GovBB.textField('vehicle-plate', ...)`; (2) Vehicle make, model, year, colour; (3) Engine/chassis numbers if needed. Field IDs: `vehicle-plate`, `vehicle-make`, `vehicle-model`, `vehicle-year`, `vehicle-colour`, `vehicle-engine`, `vehicle-chassis`, `vehicle-owner`. |
 | **Business/Company fields** | Separate pages for business details: (1) Company Registration Number; (2) Business name, type, and status; (3) Business address; (4) TIN/NIS. Field IDs: `business-reg`, `business-name`, `business-status`, `business-type`, `business-address`, `business-parish`, `business-postal-code`, `business-tin`, `business-nis`, `business-directors`. |
@@ -843,7 +849,7 @@ In the confirmation page template, use `window.__refNumber` with a fallback:
 When creating a new prototype, you must also:
 
 1. Add the form name → prefix mapping in `lib/reference.js` (e.g. `'My New Form': 'MNF'`).
-2. Ensure the form collects an email address (field ID `contact-email` or `email`) if applicant confirmation is needed.
+2. Every prototype must collect the applicant's email in a field with ID `contact-email`. This is non-negotiable — the submission pipeline uses this field to send the confirmation email, and without it the applicant will not receive one. See "Form structure rules" rule 6 for placement guidance.
 
 ---
 
@@ -887,4 +893,5 @@ The user will provide a completed Form Specification document. Parse it as follo
 - [ ] Confirmation page with `window.__refNumber` fallback
 - [ ] Form name → prefix mapping added to `lib/reference.js`
 - [ ] Start page includes `${GovBB.chatBtn()}` and `${GovBB.whatsappBtn()}` for alternative channels
+- [ ] Every prototype collects an email address in a `contact-email` field (dedicated email page OR a Contact Block page). Email is validated as required + basic format (`/^\S+@\S+\.\S+$/`) in `validate()`. The email row appears on the Check Your Answers page.
 - [ ] If the service requires payment: payment pages (`payment`, `payment-details`, `payment-confirm`) included in flow with `GovBB.paymentMethodPage()`, `GovBB.paymentDetailsPage()`, `GovBB.paymentConfirmPage()`, and `GovBB.validatePayment()` in the validate function. Check Your Answers button says "Continue to payment" instead of "Submit application".
