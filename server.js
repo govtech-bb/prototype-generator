@@ -11,6 +11,7 @@ const { generatePrototype } = require('./lib/generate');
 const { chat } = require('./lib/chat');
 const { concierge } = require('./lib/concierge');
 const catalogue = require('./lib/catalogue');
+const infoCatalogue = require('./lib/info-catalogue');
 const cms = require('./lib/cases');
 const whatsapp = require('./lib/whatsapp');
 const s3 = require('./lib/s3');
@@ -408,9 +409,16 @@ app.post('/api/concierge', async (req, res) => {
     // digitise next; most-requested intents inform catalogue curation.
     const userMsg = typeof message === 'string' ? message.trim() : '';
     if (userMsg) {
-      if (result.recommendations.length > 0) {
-        const names = result.recommendations.map(r => r.formName).join(', ');
-        console.log(`  Concierge: "${userMsg}" → ${names}`);
+      if (result.answered) {
+        console.log(`  Concierge: "${userMsg}" → answered from ${result.answered.slug} ("${result.answered.quote.substring(0, 60)}…")`);
+      } else if (result.deferred) {
+        console.log(`  Concierge: "${userMsg}" → deferred to ${result.deferred.slug}`);
+      } else if (result.recommendations.length > 0) {
+        const labels = result.recommendations.map(r => {
+          const id = r.kind === 'online-form' ? r.folder : r.slug;
+          return `${r.kind === 'online-form' ? 'form' : 'info'}:${id}`;
+        }).join(', ');
+        console.log(`  Concierge: "${userMsg}" → ${labels}`);
       } else if (result.noMatch) {
         console.log(`  Concierge: "${userMsg}" → no match`);
       } else {
@@ -423,6 +431,8 @@ app.post('/api/concierge', async (req, res) => {
       conversationId: result.conversationId,
       reply: result.reply,
       recommendations: result.recommendations,
+      answered: result.answered,
+      deferred: result.deferred,
       noMatch: result.noMatch,
     });
   } catch (err) {
@@ -432,6 +442,35 @@ app.post('/api/concierge', async (req, res) => {
       success: false,
       error: 'Something went wrong. Please try again.',
     });
+  }
+});
+
+// ── POST /api/info-catalogue/refresh ────────────────────────
+// Force a fresh build of the info-catalogue (from the frontend-alpha
+// GitHub repo) so content-team updates surface without waiting for the
+// 6-hour TTL. Requires a shared-secret token — without it this would be
+// a trivial DoS vector (~50 GitHub fetches per call).
+app.post('/api/info-catalogue/refresh', async (req, res) => {
+  const expected = process.env.INFO_CATALOGUE_REFRESH_TOKEN;
+  if (!expected) {
+    return res.status(503).json({
+      success: false,
+      error: 'INFO_CATALOGUE_REFRESH_TOKEN is not set on the server. Set it in .env to enable this endpoint.',
+    });
+  }
+  const header = req.headers['authorization'] || '';
+  const m = header.match(/^Bearer\s+(.+)$/i);
+  if (!m || m[1] !== expected) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
+  try {
+    const result = await infoCatalogue.refresh();
+    console.log(`  Info catalogue refreshed: ${result.records} records (${result.errors} errors)`);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('  Info catalogue refresh error:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
