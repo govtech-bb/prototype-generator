@@ -1158,6 +1158,19 @@
      ═══════════════════════════════════════════════ */
 
   function submitApplication() {
+    // Derive the prototype folder from the URL so the server can look up
+    // any per-service meta.json (notification_email override, etc.).
+    // Folder-based prototypes live under /<folder>/<page>.html — the
+    // folder is the first non-empty path segment and has no dot.
+    // Legacy flat files (/foo.html) have no folder; leave it null.
+    var _folder = null;
+    try {
+      var _parts = window.location.pathname.split('/').filter(Boolean);
+      if (_parts.length >= 2 && _parts[0].indexOf('.') === -1) {
+        _folder = _parts[0];
+      }
+    } catch (_) { /* non-fatal */ }
+
     return (async function () {
       try {
         var res = await fetch('/api/submit', {
@@ -1167,6 +1180,7 @@
             formName: _config.formName,
             formData: Object.assign({}, _dataCache),
             userEmail: D['contact-email'] || D['email'] || null,
+            folder: _folder,
           }),
         });
         var result = await res.json();

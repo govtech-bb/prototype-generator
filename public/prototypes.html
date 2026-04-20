@@ -57,7 +57,26 @@
     </aside>
 
     <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-2">Generated prototypes</h1>
-    <p class="text-bb-mid-grey-00 mb-8">All form prototypes that have been created.</p>
+    <p class="text-bb-mid-grey-00 mb-4">All service prototypes that have been created.</p>
+
+    <!-- Auth bar: lets you log in (with the same CMS account that /cms.html uses)
+         to expose the manage/delete controls below. -->
+    <div id="auth-bar" class="mb-6"></div>
+
+    <!-- Bulk actions: only visible when logged in. Sits above the list. -->
+    <div id="bulk-actions" class="hidden flex items-center justify-between gap-4 py-s px-s bg-bb-teal-10 rounded-sm mb-4">
+      <div class="flex items-center gap-4 text-[1rem]">
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" id="select-all" class="w-5 h-5 accent-bb-teal-00">
+          <span>Select all</span>
+        </label>
+        <span id="selection-count" class="text-bb-mid-grey-00">0 selected</span>
+      </div>
+      <button id="delete-selected-btn" type="button" disabled
+        class="relative inline-flex items-center justify-center gap-2 text-[1rem] whitespace-nowrap outline-none bg-bb-red-00 text-bb-white-00 hover:bg-[#862020] active:bg-[#6a1818] px-s py-xs rounded-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed focus-visible:ring-4 focus-visible:ring-offset-1 focus-visible:ring-bb-red-40">
+        Delete selected
+      </button>
+    </div>
 
     <div id="prototypes-list">
       <p class="text-bb-mid-grey-00">Loading...</p>
@@ -81,64 +100,249 @@
 </footer>
 
 <script>
-async function loadPrototypes() {
-  const container = document.getElementById('prototypes-list');
-  try {
-    const res = await fetch('/api/prototypes');
-    const data = await res.json();
-    const list = data.prototypes || [];
+(function () {
+  'use strict';
 
-    if (list.length === 0) {
-      container.innerHTML = '<p class="text-bb-mid-grey-00">No prototypes have been generated yet.</p>';
+  // Shared auth: reuse the same localStorage key the CMS dashboard uses,
+  // so signing in at /cms.html flows through to manage-mode here.
+  let token = localStorage.getItem('cms_token');
+  let caseworkerName = localStorage.getItem('cms_name') || '';
+  let prototypes = [];
+  const selected = new Set();  // set of filename identifiers
+
+  const authBar = document.getElementById('auth-bar');
+  const listEl = document.getElementById('prototypes-list');
+  const bulkBar = document.getElementById('bulk-actions');
+  const selectAllEl = document.getElementById('select-all');
+  const selCountEl = document.getElementById('selection-count');
+  const deleteBtn = document.getElementById('delete-selected-btn');
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  async function api(method, path, body) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (token) opts.headers.Authorization = 'Bearer ' + token;
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    if (res.status === 401) {
+      // Token expired — drop it silently and re-render auth bar as logged-out
+      token = null;
+      caseworkerName = '';
+      localStorage.removeItem('cms_token');
+      localStorage.removeItem('cms_name');
+      renderAuth();
+      renderList();
+      throw new Error('Session expired. Please log in again.');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Request failed (HTTP ' + res.status + ')'));
+    return data;
+  }
+
+  /* ── Auth bar ── */
+  function renderAuth() {
+    if (token) {
+      authBar.innerHTML =
+        '<div class="flex items-center justify-between gap-4 p-s bg-bb-teal-10 border-2 border-bb-teal-40 rounded-sm">' +
+          '<p class="text-[1rem]"><span class="font-bold">Manage mode</span> &mdash; logged in as ' + esc(caseworkerName || 'user') + '</p>' +
+          '<button type="button" id="logout-btn" class="text-bb-teal-00 hover:text-bb-black-00 text-[1rem] underline underline-offset-2 hover:no-underline">Log out</button>' +
+        '</div>';
+      document.getElementById('logout-btn').addEventListener('click', doLogout);
+      bulkBar.classList.remove('hidden');
+    } else {
+      authBar.innerHTML =
+        '<details class="bg-bb-grey-00/30 rounded-sm">' +
+          '<summary class="p-s cursor-pointer text-[1rem] font-bold outline-none">Log in to manage prototypes</summary>' +
+          '<div class="px-s pb-s pt-0 space-y-3">' +
+            '<p class="text-[0.875rem] text-bb-mid-grey-00">Uses the same account as the <a href="/cms.html" class="underline underline-offset-2 text-bb-teal-00">CMS dashboard</a>. Logging in reveals checkboxes next to each prototype so you can remove malformed ones.</p>' +
+            '<div class="flex flex-wrap gap-3 items-end">' +
+              '<div class="flex flex-col gap-1">' +
+                '<label for="login-u" class="text-[0.875rem] font-bold">Username</label>' +
+                '<input type="text" id="login-u" autocomplete="username" class="border-2 border-bb-black-00 rounded-sm p-xs bg-bb-white-00 text-[1rem]">' +
+              '</div>' +
+              '<div class="flex flex-col gap-1">' +
+                '<label for="login-p" class="text-[0.875rem] font-bold">Password</label>' +
+                '<input type="password" id="login-p" autocomplete="current-password" class="border-2 border-bb-black-00 rounded-sm p-xs bg-bb-white-00 text-[1rem]">' +
+              '</div>' +
+              '<button type="button" id="login-btn" class="inline-flex items-center justify-center gap-2 text-[1rem] bg-bb-teal-00 text-bb-white-00 hover:bg-[#1a777d] active:bg-[#0a4549] px-s py-xs rounded-sm font-bold focus-visible:ring-4 focus-visible:ring-bb-teal-100">Log in</button>' +
+            '</div>' +
+            '<p id="login-err" class="text-bb-red-00 text-[0.875rem] hidden"></p>' +
+          '</div>' +
+        '</details>';
+      document.getElementById('login-btn').addEventListener('click', doLogin);
+      document.getElementById('login-p').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+      bulkBar.classList.add('hidden');
+    }
+  }
+
+  async function doLogin() {
+    const u = (document.getElementById('login-u').value || '').trim();
+    const p = document.getElementById('login-p').value || '';
+    const errEl = document.getElementById('login-err');
+    errEl.classList.add('hidden');
+    if (!u || !p) {
+      errEl.textContent = 'Enter a username and password.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    try {
+      const data = await api('POST', '/api/cms/login', { username: u, password: p });
+      if (!data || !data.token) throw new Error('Login failed');
+      token = data.token;
+      caseworkerName = data.name || u;
+      localStorage.setItem('cms_token', token);
+      localStorage.setItem('cms_name', caseworkerName);
+      renderAuth();
+      renderList();
+    } catch (err) {
+      errEl.textContent = err.message || 'Invalid username or password';
+      errEl.classList.remove('hidden');
+    }
+  }
+
+  async function doLogout() {
+    try { await api('POST', '/api/cms/logout'); } catch (_) {}
+    token = null;
+    caseworkerName = '';
+    localStorage.removeItem('cms_token');
+    localStorage.removeItem('cms_name');
+    selected.clear();
+    renderAuth();
+    renderList();
+  }
+
+  /* ── Prototype list ── */
+  async function loadPrototypes() {
+    try {
+      const data = await api('GET', '/api/prototypes');
+      prototypes = data.prototypes || [];
+      renderList();
+    } catch (err) {
+      listEl.innerHTML = '<p class="text-bb-red-00">Could not load prototypes.</p>';
+    }
+  }
+
+  function renderList() {
+    if (!prototypes.length) {
+      listEl.innerHTML = '<p class="text-bb-mid-grey-00">No prototypes have been generated yet.</p>';
+      updateSelectionCount();
       return;
     }
 
-    const rows = list.map(p => {
-      const name = p.title || p.filename
-        .replace(/\.html$/, '')
-        .replace(/-[a-z0-9]{5,10}$/, '')
-        .replace(/-/g, ' ')
-        .replace(/\b\w/g, c => c.toUpperCase())
-        .trim();
-      const date = new Date(p.created).toLocaleDateString('en-GB', {
-        day: 'numeric', month: 'short', year: 'numeric'
+    const authed = !!token;
+    const rows = prototypes.map(p => rowHtml(p, authed)).join('');
+    listEl.innerHTML = '<div class="border-t border-bb-grey-00">' + rows + '</div>';
+
+    // Wire checkboxes
+    if (authed) {
+      listEl.querySelectorAll('input[data-proto]').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const target = e.target.getAttribute('data-proto');
+          if (e.target.checked) selected.add(target);
+          else selected.delete(target);
+          updateSelectionCount();
+        });
       });
-      const size = p.size < 1024 ? p.size + ' B'
-        : p.size < 1048576 ? (p.size / 1024).toFixed(1) + ' KB'
-        : (p.size / 1048576).toFixed(1) + ' MB';
-
-      const chatUrl = '/chat.html?form=' + encodeURIComponent(p.filename);
-      const btnCls = 'shrink-0 relative inline-flex items-center justify-center gap-2 text-[1rem] whitespace-nowrap transition-all duration-200 outline-none border-2 px-s py-xs rounded-sm leading-[1.7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-1 focus-visible:ring-bb-teal-100 no-underline';
-
-      return `
-        <div class="flex items-center justify-between py-s border-b border-bb-grey-00 gap-4">
-          <div class="min-w-0">
-            <a href="${p.url}" target="_blank"
-              class="inline-flex outline-none underline-offset-2 underline hover:no-underline active:bg-bb-yellow-100 focus-visible:bg-bb-yellow-100 text-bb-teal-00 hover:text-bb-black-00 hover:bg-bb-teal-10 font-bold text-[1.25rem] leading-normal">
-              ${name}
-            </a>
-            <p class="text-[1rem] text-bb-mid-grey-00">${date} &middot; ${size}</p>
-          </div>
-          <div class="flex gap-2 shrink-0">
-            <a href="${p.url}" target="_blank"
-              class="${btnCls} border-bb-teal-00 text-bb-teal-00 bg-bb-white-00 hover:bg-bb-teal-10">
-              Form
-            </a>
-            <a href="${chatUrl}" target="_blank"
-              class="${btnCls} border-bb-blue-100 text-bb-blue-100 bg-bb-white-00 hover:bg-bb-blue-10">
-              Chat
-            </a>
-          </div>
-        </div>`;
-    }).join('');
-
-    container.innerHTML = '<div class="border-t border-bb-grey-00">' + rows + '</div>';
-  } catch (err) {
-    container.innerHTML = '<p class="text-bb-red-00">Could not load prototypes.</p>';
+    }
+    updateSelectionCount();
   }
-}
 
-loadPrototypes();
+  function rowHtml(p, authed) {
+    const name = p.title || p.filename
+      .replace(/\.html$/, '')
+      .replace(/-[a-z0-9]{5,10}$/, '')
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase())
+      .trim();
+    const date = new Date(p.created).toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'short', year: 'numeric'
+    });
+    const size = p.size < 1024 ? p.size + ' B'
+      : p.size < 1048576 ? (p.size / 1024).toFixed(1) + ' KB'
+      : (p.size / 1048576).toFixed(1) + ' MB';
+
+    const chatUrl = '/chat.html?form=' + encodeURIComponent(p.filename);
+    const btnCls = 'shrink-0 relative inline-flex items-center justify-center gap-2 text-[1rem] whitespace-nowrap transition-all duration-200 outline-none border-2 px-s py-xs rounded-sm leading-[1.7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-offset-1 focus-visible:ring-bb-teal-100 no-underline';
+
+    const checkboxHtml = authed
+      ? '<label class="shrink-0 cursor-pointer p-xs -ml-xs"><input type="checkbox" data-proto="' + esc(p.filename) + '" ' + (selected.has(p.filename) ? 'checked' : '') + ' class="w-5 h-5 accent-bb-teal-00"></label>'
+      : '';
+
+    return `
+      <div class="flex items-center justify-between py-s border-b border-bb-grey-00 gap-4">
+        ${checkboxHtml}
+        <div class="min-w-0 flex-1">
+          <a href="${esc(p.url)}" target="_blank"
+            class="inline-flex outline-none underline-offset-2 underline hover:no-underline active:bg-bb-yellow-100 focus-visible:bg-bb-yellow-100 text-bb-teal-00 hover:text-bb-black-00 hover:bg-bb-teal-10 font-bold text-[1.25rem] leading-normal">
+            ${esc(name)}
+          </a>
+          <p class="text-[1rem] text-bb-mid-grey-00">${date} &middot; ${size}</p>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <a href="${esc(p.url)}" target="_blank"
+            class="${btnCls} border-bb-teal-00 text-bb-teal-00 bg-bb-white-00 hover:bg-bb-teal-10">
+            Form
+          </a>
+          <a href="${esc(chatUrl)}" target="_blank"
+            class="${btnCls} border-bb-blue-100 text-bb-blue-100 bg-bb-white-00 hover:bg-bb-blue-10">
+            Chat
+          </a>
+        </div>
+      </div>`;
+  }
+
+  /* ── Selection + bulk delete ── */
+  function updateSelectionCount() {
+    selCountEl.textContent = selected.size + ' selected';
+    deleteBtn.disabled = selected.size === 0;
+    // Sync Select-all checkbox with the current list
+    const visible = prototypes.map(p => p.filename);
+    const allSelected = visible.length > 0 && visible.every(f => selected.has(f));
+    selectAllEl.checked = allSelected;
+    selectAllEl.indeterminate = !allSelected && selected.size > 0;
+  }
+
+  selectAllEl.addEventListener('change', (e) => {
+    if (e.target.checked) prototypes.forEach(p => selected.add(p.filename));
+    else selected.clear();
+    renderList();  // re-render to reflect individual checkboxes
+  });
+
+  deleteBtn.addEventListener('click', async () => {
+    if (selected.size === 0) return;
+    const count = selected.size;
+    const confirmMsg =
+      'Delete ' + count + ' prototype' + (count > 1 ? 's' : '') + '?\n\n' +
+      'They will disappear from this list and the services chatbot. Data stays in S3 in case you need to recover it later — you can always regenerate a fresh version from the same specification.';
+    if (!window.confirm(confirmMsg)) return;
+
+    const targets = Array.from(selected);
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting…';
+
+    const results = await Promise.allSettled(
+      targets.map(t => api('POST', '/api/prototypes/delete', { target: t }))
+    );
+    const failed = [];
+    results.forEach((r, i) => { if (r.status === 'rejected') failed.push(targets[i]); });
+
+    selected.clear();
+    deleteBtn.textContent = 'Delete selected';
+    await loadPrototypes();
+
+    if (failed.length) {
+      window.alert(failed.length + ' deletion(s) failed:\n' + failed.join('\n'));
+    }
+  });
+
+  /* ── Init ── */
+  renderAuth();
+  loadPrototypes();
+})();
 </script>
 </body>
 </html>

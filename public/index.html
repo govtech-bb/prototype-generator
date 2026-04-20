@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Form Prototype Generator – GovTech Barbados</title>
+<title>Service Prototype Generator – GovTech Barbados</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300..900&display=swap" rel="stylesheet">
@@ -129,8 +129,8 @@ body {
 <main>
   <div class="container py-l max-w-3xl">
 
-    <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-2">Form Prototype Generator</h1>
-    <p class="text-bb-mid-grey-00 mb-8">Upload one or more PDF form specifications, or describe a form you need, and we'll generate a clickable prototype for each one.</p>
+    <h1 class="font-bold text-[3.5rem] leading-[1.15] mb-2">Service Prototype Generator</h1>
+    <p class="text-bb-mid-grey-00 mb-8">Upload one or more PDF service specifications, or describe a service you need, and we'll generate a clickable prototype for each one.</p>
 
     <!-- Input method toggle -->
     <div class="flex gap-0 mb-8 border-b-2 border-bb-grey-00">
@@ -140,7 +140,7 @@ body {
       </button>
       <button id="tab-text" onclick="switchTab('text')"
         class="px-xm py-s font-bold text-[1.25rem] border-b-4 border-transparent text-bb-mid-grey-00 -mb-[2px] transition-colors hover:text-bb-black-00">
-        Describe a form
+        Describe a service
       </button>
     </div>
 
@@ -166,15 +166,15 @@ body {
     <div id="panel-text" class="hidden">
       <div class="flex flex-col gap-xs w-full items-start">
         <label for="description" class="block text-[1.25rem] leading-normal font-bold text-bb-black-00">
-          Form description
+          Service description
         </label>
         <p class="text-[1.25rem] leading-normal text-bb-mid-grey-00">
-          Describe the form, its fields, who it's for, and any validation rules. The more detail you provide, the better the prototype.
+          Describe the service, its fields, who it's for, and any validation rules. The more detail you provide, the better the prototype.
         </p>
         <div class="relative inline-flex w-full rounded-sm border-2 border-bb-black-00 items-center gap-2 transition-all bg-bb-white-00 hover:shadow-form-hover focus-within:ring-4 focus-within:ring-bb-teal-100">
           <textarea id="description" name="description" rows="10"
             class="w-full min-w-0 p-s outline-none rounded-[inherit] placeholder:text-bb-black-00/60 resize-y"
-            placeholder="Example: A form for the Barbados Licensing Authority to apply for a temporary vehicle permit. Fields include: applicant name, address, date of birth, national registration number, vehicle details (make, model, year), reason for temporary permit, and duration requested."></textarea>
+            placeholder="Example: A service for the Barbados Licensing Authority to apply for a temporary vehicle permit. Fields include: applicant name, address, date of birth, national registration number, vehicle details (make, model, year), reason for temporary permit, and duration requested."></textarea>
         </div>
       </div>
     </div>
@@ -230,7 +230,7 @@ body {
 <script>
 /* ── State ── */
 let activeTab = 'upload';
-let selectedFiles = [];   // array of { id, file }
+let selectedFiles = [];   // array of { id, file, notificationEmail, instructions }
 let fileIdCounter = 0;
 const MAX_CONCURRENCY = 3;
 
@@ -276,7 +276,7 @@ function addFiles(files) {
     }
     // De-dupe by name + size
     if (selectedFiles.some(f => f.file.name === file.name && f.file.size === file.size)) continue;
-    selectedFiles.push({ id: ++fileIdCounter, file });
+    selectedFiles.push({ id: ++fileIdCounter, file, notificationEmail: '', instructions: '' });
   }
   renderFileList();
 }
@@ -315,20 +315,64 @@ function renderFileList() {
   actions.classList.remove('hidden');
   dropZone.classList.remove('hidden');   // keep drop zone visible so users can add more
 
-  for (const { id, file } of selectedFiles) {
+  for (const entry of selectedFiles) {
+    const { id, file, notificationEmail, instructions } = entry;
     const li = document.createElement('li');
-    li.className = 'p-s bg-bb-teal-10 rounded-sm flex items-center justify-between';
+    li.className = 'bg-bb-teal-10 rounded-sm';
     li.innerHTML = `
-      <div class="flex items-center gap-2 min-w-0">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0e5f64" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        <span class="text-bb-teal-00 font-bold truncate">${escapeHtml(file.name)}</span>
-        <span class="text-bb-mid-grey-00 text-[1rem] shrink-0">${formatSize(file.size)}</span>
+      <div class="p-s flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0e5f64" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span class="text-bb-teal-00 font-bold truncate">${escapeHtml(file.name)}</span>
+          <span class="text-bb-mid-grey-00 text-[1rem] shrink-0">${formatSize(file.size)}</span>
+        </div>
+        <div class="flex items-center gap-4 shrink-0">
+          <button type="button" class="text-bb-teal-00 hover:text-bb-black-00 text-[1rem] underline underline-offset-2 hover:no-underline inline-flex items-center gap-1" data-action="toggle-options" aria-expanded="false" aria-controls="opts-${id}">
+            <span>Options</span>
+            <svg class="chevron transition-transform" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <button type="button" class="text-bb-mid-grey-00 hover:text-bb-red-00 text-[1rem] underline underline-offset-2 hover:no-underline" data-action="remove">Remove</button>
+        </div>
       </div>
-      <button class="text-bb-mid-grey-00 hover:text-bb-red-00 text-[1rem] underline shrink-0 ml-4">Remove</button>
+      <div id="opts-${id}" class="hidden px-s pb-s border-t border-bb-teal-40 pt-s space-y-4" data-options-panel>
+        <div>
+          <label class="block text-[1rem] font-bold text-bb-black-00">Notification email (optional)</label>
+          <p class="text-[0.875rem] text-bb-mid-grey-00 mb-2">Where submissions to this service should be emailed. Leave blank to use the default.</p>
+          <div class="relative inline-flex w-full rounded-sm border-2 border-bb-black-00 items-center bg-bb-white-00 hover:shadow-form-hover focus-within:ring-4 focus-within:ring-bb-teal-100">
+            <input type="email" class="w-full min-w-0 p-xs outline-none rounded-[inherit]" data-opt="notificationEmail" placeholder="caseworker@dept.gov.bb" value="${escapeHtml(notificationEmail || '')}">
+          </div>
+        </div>
+        <div>
+          <label class="block text-[1rem] font-bold text-bb-black-00">Additional instructions (optional)</label>
+          <p class="text-[0.875rem] text-bb-mid-grey-00 mb-2">Extra guidance for this service — e.g. "skip the eligibility section" or "add a field for phone number".</p>
+          <div class="relative inline-flex w-full rounded-sm border-2 border-bb-black-00 bg-bb-white-00 hover:shadow-form-hover focus-within:ring-4 focus-within:ring-bb-teal-100">
+            <textarea rows="3" class="w-full min-w-0 p-xs outline-none rounded-[inherit] resize-y" data-opt="instructions" placeholder="Extra instructions for this service...">${escapeHtml(instructions || '')}</textarea>
+          </div>
+        </div>
+      </div>
     `;
-    li.querySelector('button').addEventListener('click', () => removeFile(id));
+    // Wire buttons + inputs
+    li.querySelector('[data-action="toggle-options"]').addEventListener('click', () => toggleOptions(id, li));
+    li.querySelector('[data-action="remove"]').addEventListener('click', () => removeFile(id));
+    li.querySelector('[data-opt="notificationEmail"]').addEventListener('input', (e) => updateOpt(id, 'notificationEmail', e.target.value));
+    li.querySelector('[data-opt="instructions"]').addEventListener('input', (e) => updateOpt(id, 'instructions', e.target.value));
     list.appendChild(li);
   }
+}
+
+function toggleOptions(id, liEl) {
+  const panel = liEl.querySelector('[data-options-panel]');
+  const btn = liEl.querySelector('[data-action="toggle-options"]');
+  const chev = btn.querySelector('.chevron');
+  const isHidden = panel.classList.toggle('hidden');
+  const expanded = !isHidden;
+  btn.setAttribute('aria-expanded', String(expanded));
+  if (chev) chev.style.transform = expanded ? 'rotate(180deg)' : '';
+}
+
+function updateOpt(id, key, value) {
+  const entry = selectedFiles.find(f => f.id === id);
+  if (entry) entry[key] = value;
 }
 
 function escapeHtml(s) {
@@ -356,18 +400,20 @@ async function generate() {
       showError('Please upload at least one PDF file.');
       return;
     }
-    jobs = selectedFiles.map(({ file }) => ({
+    jobs = selectedFiles.map(({ file, notificationEmail, instructions }) => ({
       label: file.name,
       buildBody: () => {
         const fd = new FormData();
         fd.append('pdf', file);
+        if (notificationEmail && notificationEmail.trim()) fd.append('notification_email', notificationEmail.trim());
+        if (instructions && instructions.trim()) fd.append('instructions', instructions.trim());
         return fd;
       },
     }));
   } else {
     const desc = document.getElementById('description').value.trim();
     if (!desc) {
-      showError('Please enter a form description.');
+      showError('Please enter a service description.');
       return;
     }
     jobs = [{

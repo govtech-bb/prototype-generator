@@ -12,6 +12,7 @@ const { chat } = require('./lib/chat');
 const { concierge } = require('./lib/concierge');
 const catalogue = require('./lib/catalogue');
 const infoCatalogue = require('./lib/info-catalogue');
+const prototypeMeta = require('./lib/prototype-meta');
 const cms = require('./lib/cases');
 const whatsapp = require('./lib/whatsapp');
 const s3 = require('./lib/s3');
@@ -80,9 +81,21 @@ app.post('/api/generate', upload.single('pdf'), async (req, res) => {
       });
     }
 
+    // Per-service options from the upload row (both optional):
+    //   notification_email — where submissions to THIS prototype should be
+    //                        emailed (overrides MDA_EMAIL env default)
+    //   instructions       — extra guidance for Claude for THIS service,
+    //                        appended to the user prompt
+    const notificationEmail = (req.body.notification_email || '').trim();
+    const instructions = (req.body.instructions || '').trim();
+    if (notificationEmail) console.log(`  Notification email: ${notificationEmail}`);
+    if (instructions) console.log(`  Extra instructions: ${instructions.length} chars`);
+
     // Call Claude API to generate the prototype
     console.log('  Generating prototype with Claude API...');
-    const { files, formName } = await generatePrototype(formSpec);
+    const { files, formName } = await generatePrototype(formSpec, {
+      instructions: instructions || null,
+    });
 
     if (!files || files.length === 0) {
       return res.status(500).json({
@@ -107,6 +120,24 @@ app.post('/api/generate', upload.single('pdf'), async (req, res) => {
       await s3.putObject(s3Key, file.html, 'text/html');
       totalSize += file.html.length;
       console.log(`  Saved: ${s3Key}`);
+    }
+
+    // Write per-prototype meta.json sidecar when either option was set.
+    // /api/submit reads this back to route notifications to the per-
+    // service email instead of the MDA_EMAIL env default.
+    if (notificationEmail || instructions) {
+      try {
+        await prototypeMeta.setMeta(folder, {
+          formName,
+          notificationEmail: notificationEmail || null,
+          instructions: instructions || null,
+          createdAt: new Date().toISOString(),
+        });
+        console.log(`  Saved: prototypes/${folder}/meta.json`);
+      } catch (err) {
+        // Non-fatal — the prototype itself is fine, just no meta record.
+        console.warn(`  meta.json write failed: ${err.message}`);
+      }
     }
 
     // Invalidate the concierge catalogue so the new prototype is routable
@@ -145,9 +176,32 @@ app.get('/api/prototypes', async (req, res) => {
     const folders = new Map();  // folder -> { indexKey, totalSize, created, files[] }
     const flatFiles = [];       // legacy single-file prototypes
 
+    // Tombstone marker sets — populated by scanning for `.deleted` sentinel
+    // files. A folder-based prototype is tombstoned by writing
+    // `prototypes/<folder>/.deleted`; a legacy flat file is tombstoned by
+    // writing `prototypes/<filename>.html.deleted` next to the HTML file.
+    // Both forms are written by POST /api/prototypes/:folder/delete.
+    const deletedFolders = new Set();
+    const deletedFlatFiles = new Set();
+
     for (const obj of objects) {
       const relPath = obj.key.replace('prototypes/', '');
-      if (!relPath || !relPath.endsWith('.html')) continue;
+      if (!relPath) continue;
+
+      // Collect tombstones first — they're not HTML, and they hide
+      // the HTML files listed elsewhere in this pass.
+      if (relPath.endsWith('/.deleted')) {
+        const folder = relPath.slice(0, -'/.deleted'.length);
+        if (folder) deletedFolders.add(folder);
+        continue;
+      }
+      if (relPath.endsWith('.html.deleted')) {
+        const filename = relPath.slice(0, -'.deleted'.length);  // foo.html
+        deletedFlatFiles.add(filename);
+        continue;
+      }
+
+      if (!relPath.endsWith('.html')) continue;
 
       const parts = relPath.split('/');
       if (parts.length === 2) {
@@ -168,6 +222,9 @@ app.get('/api/prototypes', async (req, res) => {
         flatFiles.push(obj);
       }
     }
+
+    // Drop tombstoned entries from the groupings.
+    for (const folder of deletedFolders) folders.delete(folder);
 
     const prototypes = [];
 
@@ -192,9 +249,10 @@ app.get('/api/prototypes', async (req, res) => {
       });
     }
 
-    // Process legacy flat files
+    // Process legacy flat files (skip tombstoned)
     for (const obj of flatFiles) {
       const filename = obj.key.replace('prototypes/', '');
+      if (deletedFlatFiles.has(filename)) continue;
       let title = null;
       try {
         const head = await s3.getObjectRange(obj.key, 0, 1999);
@@ -223,7 +281,7 @@ app.get('/api/prototypes', async (req, res) => {
 
 // ── POST /api/submit ────────────────────────────────────────
 app.post('/api/submit', async (req, res) => {
-  const { formName, formData, userEmail } = req.body;
+  const { formName, formData, userEmail, folder } = req.body;
 
   // Basic validation
   if (!formName || !formData || typeof formData !== 'object') {
@@ -239,17 +297,28 @@ app.post('/api/submit', async (req, res) => {
   // Create case in CMS
   cms.createCase({ referenceNumber, formName, formData, userEmail, channel: 'form' });
 
+  // Look up per-prototype meta (if the generator UI set a notification
+  // email on this service). Missing meta = use MDA_EMAIL default.
+  let notificationTarget = null;
+  if (folder) {
+    const meta = await prototypeMeta.getMeta(folder);
+    if (meta && meta.notificationEmail) {
+      notificationTarget = meta.notificationEmail;
+    }
+  }
+
   console.log(`\n━━━ New Submission ━━━━━━━━━━━━━━━━━━━━━━━━━━`);
   console.log(`  Form:      ${formName}`);
   console.log(`  Reference: ${referenceNumber}`);
   console.log(`  Email:     ${userEmail || '(none)'}`);
+  console.log(`  Notify →   ${notificationTarget || '(default MDA inbox)'}`);
   console.log(`  Fields:    ${Object.keys(formData).length}`);
   console.log(`  Time:      ${new Date().toISOString()}`);
 
   // Send both emails in parallel (neither blocks the other)
   const [confirmResult, notifyResult] = await Promise.allSettled([
     sendConfirmation(userEmail, formName, referenceNumber),
-    sendNotification(formName, formData, referenceNumber, userEmail),
+    sendNotification(formName, formData, referenceNumber, userEmail, { notificationTarget }),
   ]);
 
   const emailSent =
@@ -552,6 +621,61 @@ app.get('/api/cms/cases/:id', requireAuth, (req, res) => {
   const c = cms.getCase(req.params.id);
   if (!c) return res.status(404).json({ error: 'Case not found' });
   return res.json(c);
+});
+
+// ── POST /api/prototypes/delete ──────────────────────────────
+// Soft-delete a prototype by writing a tombstone sentinel file next to
+// it. The listing (`GET /api/prototypes`) and the concierge catalogue
+// both skip tombstoned entries. Data stays in S3 (the IAM policy here
+// doesn't grant DeleteObject); a later manual cleanup or IAM update can
+// hard-delete the bytes.
+//
+// Request: { target: "<filename>" } where <filename> is either
+//   - "<folder>/index.html"  → tombstones prototypes/<folder>/.deleted
+//   - "<slug>.html"          → tombstones prototypes/<slug>.html.deleted
+app.post('/api/prototypes/delete', requireAuth, async (req, res) => {
+  const target = (req.body && req.body.target ? String(req.body.target) : '').trim();
+
+  // Reject path traversal and malformed inputs
+  if (!target || target.includes('..') || target.startsWith('/') || !target.endsWith('.html')) {
+    return res.status(400).json({ success: false, error: 'Invalid target.' });
+  }
+
+  const parts = target.split('/');
+  let tombstoneKey;
+  let label;
+  if (parts.length === 2) {
+    const folder = parts[0];
+    if (!folder) return res.status(400).json({ success: false, error: 'Invalid target.' });
+    tombstoneKey = `prototypes/${folder}/.deleted`;
+    label = `folder:${folder}`;
+  } else if (parts.length === 1) {
+    tombstoneKey = `prototypes/${target}.deleted`;
+    label = `flat:${target}`;
+  } else {
+    return res.status(400).json({ success: false, error: 'Invalid target.' });
+  }
+
+  try {
+    const now = new Date().toISOString();
+    const body = JSON.stringify({
+      deletedAt: now,
+      deletedBy: req.caseworker && req.caseworker.username ? req.caseworker.username : 'unknown',
+      target,
+    }, null, 2);
+    await s3.putObject(tombstoneKey, body, 'application/json');
+
+    // Catalogues cache for 5 min and 6 h; invalidate both so the delete
+    // is visible to prototypes.html AND to the concierge immediately.
+    try { catalogue.invalidate(); } catch (_) {}
+    try { infoCatalogue.invalidate(); } catch (_) {}
+
+    console.log(`  Tombstoned ${label} by ${req.caseworker.username} at ${now}`);
+    return res.json({ success: true, tombstone: tombstoneKey });
+  } catch (err) {
+    console.error('  Tombstone write failed:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.post('/api/cms/cases/:id/approve', requireAuth, async (req, res) => {
